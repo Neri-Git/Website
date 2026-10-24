@@ -3,101 +3,514 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jan Kopacz — Portfolio</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>Jan — Software Engineer & QA Automation</title>
+  <meta name="description" content="Personal portfolio of Jan Kopacz — Software Development, QA Automation, Cloud & Data Engineering.">
+  <link rel="preload" href="fonts/iosevka-light.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="glow-bg"></div>
+  <!-- WebGL Hold-Click Trail Canvas -->
+  <canvas id="trail-canvas"></canvas>
 
-  <div class="container">
-    <header class="header">
-      <div class="profile">
-        <div class="avatar">JK</div>
-        <div class="intro">
-          <div class="status-pill">
-            <span class="status-dot"></span> Available for projects
-          </div>
-          <h1>Jan Kopacz</h1>
-          <p class="tagline">Developer & Tech Enthusiast</p>
-        </div>
+  <!-- Toast Notifications Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ====================================================================
+       TERMINAL INTRO ANIMATION (Matches ddaniel.dev boot sequence)
+       ==================================================================== -->
+  <section id="intro-screen" class="text-responsive-h5">
+    <button id="skip-intro-btn" class="skip-btn text-responsive-h6">
+      <span>Skip Animation</span>
+      <img src="icons/chevrons-right.svg" style="height: 1.25em; width: 1.25em;" alt="skip">
+    </button>
+
+    <div id="term-history-block" style="display: flex; flex-direction: column; gap: 0.45rem;">
+      <div class="term-row">
+        <div class="term-prompt">neri@archlinux:$</div>
+        <div>pwd</div>
       </div>
-      <p class="bio">
-        Welcome to my personal corner of the web! I enjoy building clean, functional digital experiences, exploring new technologies, and crafting software solutions.
-      </p>
-      
-      <div class="social-links">
-        <a href="https://github.com/Neri-git" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-          </svg>
-          GitHub
-        </a>
-        <a href="mailto:jan.kopacz@microsoft.wsei.edu.pl" class="btn btn-primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect width="20" height="16" x="2" y="4" rx="2"/>
-            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-          </svg>
-          Get in Touch
-        </a>
+      <div>/home/jan/Documents</div>
+
+      <div class="term-row">
+        <div class="term-prompt">neri@archlinux:$</div>
+        <div>cd portfolio</div>
       </div>
+
+      <div class="term-row">
+        <div class="term-prompt">neri@archlinux:$</div>
+        <div>ls</div>
+      </div>
+      <div>node_modules/ package-lock.json public/ src/ index.html style.css script.js README.md</div>
+
+      <div class="term-row">
+        <div class="term-prompt">neri@archlinux:$</div>
+        <div><span id="term-cmd-cleak"></span></div>
+      </div>
+
+      <div id="term-cleak-err" style="display: none;">bash: cleak: command not found</div>
+
+      <div id="term-clear-row" class="term-row" style="display: none;">
+        <div class="term-prompt">neri@archlinux:$</div>
+        <div><span id="term-cmd-clear"></span><span class="term-cursor"></span></div>
+      </div>
+    </div>
+
+    <div id="term-start-block" style="display: none; flex-direction: column; gap: 0.45rem;">
+      <div class="term-row">
+        <div class="term-prompt">neri@archlinux:$</div>
+        <div><span id="term-cmd-npm"></span></div>
+      </div>
+      <div id="term-log-1" style="display: none;">Server starting...</div>
+      <div id="term-log-2" style="display: none;">Server listening on http://localhost:5173</div>
+      <div class="term-cursor"></div>
+    </div>
+  </section>
+
+  <!-- ====================================================================
+       MAIN PORTFOLIO APPLICATION
+       ==================================================================== -->
+  <main id="main-site" class="text-responsive-h5">
+
+    <!-- Desktop Top Navbar -->
+    <header class="navbar-desktop text-responsive-h6">
+      <div class="nav-from-above glow-interactive glow-text" style="--order: 1;">DRAG ANYWHERE</div>
+      <nav>
+        <ul class="nav-list">
+          <li class="nav-item nav-from-above" data-nav-page="about" style="--order: 3;">
+            <a href="#about" data-goto="about"><span class="nav-num">0.</span><span>About</span></a>
+          </li>
+          <li class="nav-item nav-from-above" data-nav-page="skills" style="--order: 4;">
+            <a href="#skills" data-goto="skills"><span class="nav-num">1.</span><span>Skills</span></a>
+          </li>
+          <li class="nav-item nav-from-above" data-nav-page="work" style="--order: 5;">
+            <a href="#work" data-goto="work"><span class="nav-num">2.</span><span>Work</span></a>
+          </li>
+          <li class="nav-item nav-from-above" data-nav-page="projects" style="--order: 6;">
+            <a href="#projects" data-goto="projects"><span class="nav-num">3.</span><span>Projects</span></a>
+          </li>
+          <li class="nav-item nav-from-above" data-nav-page="contact" style="--order: 7;">
+            <a href="#contact" data-goto="contact"><span class="nav-num">4.</span><span>Contact</span></a>
+          </li>
+        </ul>
+      </nav>
     </header>
 
-    <main>
-      <!-- Featured Projects Section -->
-      <section class="section">
-        <h2 class="section-title">Selected Projects</h2>
-        <div class="projects-grid">
-          <div class="card project-card">
-            <div class="card-header">
-              <h3>Personal Website</h3>
-              <span class="badge">Live</span>
-            </div>
-            <p>A fast, minimalist personal homepage hosted on Vercel with automatic deployments via GitHub.</p>
-            <div class="tags">
-              <span class="tag">HTML5</span>
-              <span class="tag">CSS3</span>
-              <span class="tag">Vercel</span>
-            </div>
-          </div>
+    <!-- Mobile Top Header -->
+    <header class="navbar-mobile text-responsive-h6">
+      <span class="glow-interactive glow-text">DRAG ANYWHERE</span>
+      <button id="hamburger-btn" class="button-hamburger" aria-controls="primary-navigation" aria-expanded="false" aria-label="Menu">
+        <svg stroke="currentColor" fill="none" class="hamburger" viewBox="-10 -10 120 120">
+          <path class="line" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" d="m 20 40 h 60 a 1 1 0 0 1 0 20 h -60 a 1 1 0 0 1 0 -40 h 30 v 70"></path>
+        </svg>
+      </button>
+    </header>
 
-          <div class="card project-card">
-            <div class="card-header">
-              <h3>Upcoming Project</h3>
-              <span class="badge badge-muted">In Progress</span>
-            </div>
-            <p>Something exciting in development. Check back soon or visit my GitHub for regular updates.</p>
-            <div class="tags">
-              <span class="tag">Code</span>
-              <span class="tag">Innovation</span>
-            </div>
+    <!-- Mobile Fullscreen Slide Menu -->
+    <aside id="mobile-menu" class="mobile-menu">
+      <ul class="mobile-menu-list text-responsive-h2">
+        <li><a href="#about" data-goto="about" data-nav-page="about"><span class="text-secondary">0.</span> <span>About</span></a></li>
+        <li><a href="#skills" data-goto="skills" data-nav-page="skills"><span class="text-secondary">1.</span> <span>Skills</span></a></li>
+        <li><a href="#work" data-goto="work" data-nav-page="work"><span class="text-secondary">2.</span> <span>Work</span></a></li>
+        <li><a href="#projects" data-goto="projects" data-nav-page="projects"><span class="text-secondary">3.</span> <span>Projects</span></a></li>
+        <li><a href="#contact" data-goto="contact" data-nav-page="contact"><span class="text-secondary">4.</span> <span>Contact</span></a></li>
+      </ul>
+    </aside>
+
+    <!-- Right-Side Page Indicator Dots -->
+    <nav class="page-indicator" aria-label="Page Navigation">
+      <a href="#landing" data-goto="landing" data-page="landing" class="indicator-dot active" aria-label="Landing"></a>
+      <a href="#about" data-goto="about" data-page="about" class="indicator-dot" aria-label="About"></a>
+      <a href="#skills" data-goto="skills" data-page="skills" class="indicator-dot" aria-label="Skills"></a>
+      <a href="#work" data-goto="work" data-page="work" class="indicator-dot" aria-label="Work"></a>
+      <a href="#talk" data-goto="talk" data-page="talk" class="indicator-dot" aria-label="Quote"></a>
+      <a href="#projects" data-goto="projects" data-page="projects" class="indicator-dot" aria-label="Projects"></a>
+      <a href="#contact" data-goto="contact" data-page="contact" class="indicator-dot" aria-label="Contact"></a>
+    </nav>
+
+    <!-- ====================================================================
+         FULL-SCREEN PAGES VIEWPORT (Jumps cleanly page-to-page)
+         ==================================================================== -->
+    <div id="pages-viewport">
+
+      <!-- PAGE 1: LANDING -->
+      <section id="landing" class="page active-page">
+        <div class="landing-content">
+          <div class="hero-title-wrap text-responsive-h1 glow-interactive glow-text">Jan</div>
+
+          <div id="hero-typing-alternate" class="typing-alternate text-responsive-sub-h1 glow-text">SOFTWARE ENGINEER</div>
+
+          <p class="landing-bio">
+            [Placeholder] Passionate developer and automation engineer driven by curiosity and hands-on problem solving. Replace this placeholder description with your own personal bio and focus areas.
+          </p>
+
+          <div class="landing-buttons">
+            <button class="btn-dd btn-dd-primary text-responsive-h3" data-goto="contact">
+              Contact Me
+            </button>
+            <button class="btn-dd btn-dd-secondary text-responsive-h3" data-goto="about">
+              <span>Learn More</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="21" fill="none" viewBox="0 0 22 21">
+                <path fill="currentColor" d="M10.44.58a1.5 1.5 0 0 1 2.12 0l8.5 8.5a1.5 1.5 0 0 1 0 2.12l-8.5 8.5a1.501 1.501 0 0 1-2.12-2.12l5.94-5.94H1.5a1.5 1.5 0 1 1 0-3h14.88L10.44 2.7a1.5 1.5 0 0 1 0-2.12Z"/>
+              </svg>
+            </button>
           </div>
+        </div>
+
+        <!-- Ambient Rotating Blobs (Orange & Purple) -->
+        <div class="blob-container">
+          <div class="blob-primary"></div>
+          <div class="blob-secondary"></div>
+          <div class="blob-shadow"></div>
         </div>
       </section>
 
-      <!-- Skills Section -->
-      <section class="section">
-        <h2 class="section-title">Tools & Technologies</h2>
-        <div class="skills-wrap">
-          <span class="skill-pill">JavaScript</span>
-          <span class="skill-pill">HTML & CSS</span>
-          <span class="skill-pill">Git & GitHub</span>
-          <span class="skill-pill">VS Code</span>
-          <span class="skill-pill">Vercel</span>
-          <span class="skill-pill">Web Development</span>
+      <!-- PAGE 2: ABOUT -->
+      <section id="about" class="page">
+        <header class="section-header text-responsive-h2 glow-text">
+          <div class="sort-text" data-text="ABOUT">ABOUT</div>
+          <span class="section-brace-open glow-interactive">{</span>
+        </header>
+
+        <div class="about-grid">
+          <div class="about-left">
+            <div>
+              <p>[Placeholder] Software engineer &amp; automation specialist.</p>
+              <p>[Placeholder] Detail-oriented builder &amp; problem solver.</p>
+            </div>
+            <div class="about-badge glow-text">
+              <img src="icons/terminal.svg" alt="terminal" style="width: 1.5rem; height: 1.5rem;">
+              <span class="glow-interactive">Placeholder status / environment tagline</span>
+            </div>
+          </div>
+
+          <div>
+            <p>
+              [Placeholder Paragraph 1] Write about your background in software engineering, how you got started with technology, and what excites you most about building and testing systems.
+              <br><br>
+              [Placeholder Paragraph 2] Describe your approach to clean architecture, database design with SQL, backend scripting in Python &amp; C#, and automated end-to-end testing with Cypress.
+              <br><br>
+              [Placeholder Paragraph 3] Share what you are currently learning or working on in cloud infrastructure (Azure) and personal projects.
+            </p>
+          </div>
         </div>
+
+        <span class="section-brace-close text-responsive-h2 glow-interactive glow-text">}</span>
       </section>
-    </main>
 
-    <footer class="footer">
-      <p>&copy; <span id="year"></span> Jan Kopacz. Hosted on Vercel.</p>
-    </footer>
-  </div>
+      <!-- PAGE 3: SKILLS -->
+      <section id="skills" class="page">
+        <header class="section-header text-responsive-h2 glow-text">
+          <div class="sort-text" data-text="SKILLS">SKILLS</div>
+          <span class="section-brace-open glow-interactive">{</span>
+        </header>
 
-  <script>
-    document.getElementById('year').textContent = new Date().getFullYear();
-  </script>
+        <div class="skills-grid">
+          <p>
+            [Placeholder] I specialize in breaking down complex engineering and quality challenges into reliable, maintainable solutions. My toolkit spans backend programming, relational databases, automated testing frameworks, and cloud services.
+          </p>
+
+          <div class="skills-columns">
+            <!-- Column 1: Languages & Data -->
+            <div class="skills-col">
+              <div class="skill-item">
+                <img src="icons/python.svg" class="skill-icon" alt="Python">
+                <span class="glow-interactive">Python</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/csharp.svg" class="skill-icon" alt="C#">
+                <span class="glow-interactive">C#</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/sql.svg" class="skill-icon" alt="SQL">
+                <span class="glow-interactive">SQL</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/dotnet.svg" class="skill-icon" alt=".NET">
+                <span class="glow-interactive">.NET</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/ts.svg" class="skill-icon" alt="TypeScript">
+                <span class="glow-interactive">TypeScript</span>
+              </div>
+            </div>
+
+            <!-- Glowing Purple Vertical Divider -->
+            <div class="skills-divider">
+              <div class="skills-divider-line"></div>
+              <div class="skills-divider-glow"></div>
+            </div>
+
+            <!-- Column 2: QA, Cloud & DevOps -->
+            <div class="skills-col">
+              <div class="skill-item">
+                <img src="icons/cypress.svg" class="skill-icon" alt="Cypress">
+                <span class="glow-interactive">Cypress</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/azure.svg" class="skill-icon" alt="Azure">
+                <span class="glow-interactive">Azure</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/playwright.svg" class="skill-icon" alt="Playwright">
+                <span class="glow-interactive">Playwright</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/docker.svg" class="skill-icon" alt="Docker">
+                <span class="glow-interactive">Docker</span>
+              </div>
+              <div class="skill-item">
+                <img src="icons/git.svg" class="skill-icon" alt="Git">
+                <span class="glow-interactive">Git</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <span class="section-brace-close text-responsive-h2 glow-interactive glow-text">}</span>
+      </section>
+
+      <!-- PAGE 4: WORK EXPERIENCE TIMELINE -->
+      <section id="work" class="page">
+        <header class="section-header text-responsive-h2 glow-text">
+          <div class="sort-text" data-text="WORK">WORK</div>
+          <span class="section-brace-open glow-interactive">{</span>
+        </header>
+
+        <div class="work-body">
+          <p id="work-intro-text" class="work-intro">
+            [Placeholder] Hover over or click any node on the timeline below to inspect experience milestones. Replace these placeholder entries with your own roles, internships, or academic milestones.
+          </p>
+
+          <div class="timeline-wrapper">
+            <div class="timeline-track-row">
+              <div class="timeline-year glow-interactive">2021</div>
+
+              <div class="timeline-bar-container">
+                <div class="timeline-line-base"></div>
+                <div id="timeline-active-line" class="timeline-line-active"></div>
+
+                <div class="timeline-nodes">
+                  <!-- Node 1 -->
+                  <div class="timeline-node-wrapper even">
+                    <button class="timeline-dot-btn" aria-label="Experience 1"></button>
+                    <div class="timeline-node-label text-responsive-h3 glow-interactive">Placeholder I</div>
+                    <article class="timeline-card">
+                      <header class="text-primary text-responsive-h3 glow-interactive">Company / Role 01</header>
+                      <div class="text-text text-responsive-h5">
+                        [Placeholder] Describe your first role, project milestone, or academic experience here.
+                      </div>
+                      <footer class="timeline-card-note">Location | 2021 - 2022</footer>
+                    </article>
+                  </div>
+
+                  <!-- Node 2 -->
+                  <div class="timeline-node-wrapper odd">
+                    <button class="timeline-dot-btn" aria-label="Experience 2"></button>
+                    <div class="timeline-node-label text-responsive-h3 glow-interactive">Placeholder II</div>
+                    <article class="timeline-card">
+                      <header class="text-primary text-responsive-h3 glow-interactive">Company / Role 02</header>
+                      <div class="text-text text-responsive-h5">
+                        [Placeholder] Describe your responsibilities, technologies used (Python, SQL, C#), and key achievements.
+                      </div>
+                      <footer class="timeline-card-note">Location | 2022 - 2023</footer>
+                    </article>
+                  </div>
+
+                  <!-- Node 3 -->
+                  <div class="timeline-node-wrapper even">
+                    <button class="timeline-dot-btn" aria-label="Experience 3"></button>
+                    <div class="timeline-node-label text-responsive-h3 glow-interactive">Placeholder III</div>
+                    <article class="timeline-card">
+                      <header class="text-primary text-responsive-h3 glow-interactive">Company / Role 03</header>
+                      <div class="text-text text-responsive-h5">
+                        [Placeholder] Describe automated testing pipelines, Cypress test suites, or Azure cloud deployments.
+                      </div>
+                      <footer class="timeline-card-note">Location | 2023 - 2025</footer>
+                    </article>
+                  </div>
+
+                  <!-- Node 4 -->
+                  <div class="timeline-node-wrapper odd">
+                    <button class="timeline-dot-btn" aria-label="Experience 4"></button>
+                    <div class="timeline-node-label text-responsive-h3 glow-interactive">Placeholder IV</div>
+                    <article class="timeline-card">
+                      <header class="text-primary text-responsive-h3 glow-interactive">Current Role / Project</header>
+                      <div class="text-text text-responsive-h5">
+                        [Placeholder] Describe your current focus, engineering work, or ongoing software initiatives.
+                      </div>
+                      <footer class="timeline-card-note">Location | 2025 - Present</footer>
+                    </article>
+                  </div>
+                </div>
+              </div>
+
+              <div class="timeline-year glow-interactive">2026</div>
+            </div>
+          </div>
+        </div>
+
+        <span class="section-brace-close text-responsive-h2 glow-interactive glow-text">}</span>
+      </section>
+
+      <!-- PAGE 5: QUOTE ("TALK IS CHEAP. SHOW ME THE CODE") -->
+      <section id="talk" class="page" style="align-items: center;">
+        <header class="talk-header">
+          <div id="quote-line-1" class="talk-line"></div>
+          <div id="quote-line-2" class="talk-line"></div>
+        </header>
+        <div id="quote-author" class="talk-author glow-interactive"></div>
+      </section>
+
+      <!-- PAGE 6: PROJECTS CAROUSEL -->
+      <section id="projects" class="page">
+        <header class="section-header text-responsive-h2 glow-text">
+          <div class="sort-text" data-text="PROJECTS">PROJECTS</div>
+          <span class="section-brace-open glow-interactive">{</span>
+        </header>
+
+        <div class="projects-carousel-wrap">
+          <button id="carousel-prev" class="carousel-nav-btn carousel-prev" aria-label="Previous slide">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z"/>
+            </svg>
+          </button>
+
+          <div class="carousel-viewport">
+            <div id="carousel-track" class="carousel-track">
+              <!-- Slide 1 -->
+              <div class="carousel-slide">
+                <article class="project-card">
+                  <a href="#projects" onclick="return false;">
+                    <div class="project-img-container">
+                      <img src="images/project-1.svg" alt="Project Placeholder 1">
+                    </div>
+                    <h3 class="text-primary text-responsive-h3 glow-text">
+                      <span class="sort-text" data-text="Project One">Project One</span>
+                    </h3>
+                    <div class="project-desc-typing text-text" data-text="[Placeholder] Add your first project description, tech stack, and repository link here.">
+                      [Placeholder] Add your first project description, tech stack, and repository link here.
+                    </div>
+                  </a>
+                </article>
+              </div>
+
+              <!-- Slide 2 -->
+              <div class="carousel-slide">
+                <article class="project-card">
+                  <a href="#projects" onclick="return false;">
+                    <div class="project-img-container">
+                      <img src="images/project-2.svg" alt="Project Placeholder 2">
+                    </div>
+                    <h3 class="text-primary text-responsive-h3 glow-text">
+                      <span class="sort-text" data-text="Project Two">Project Two</span>
+                    </h3>
+                    <div class="project-desc-typing text-text" data-text="[Placeholder] Add your second project description, tech stack, and live demo link here.">
+                      [Placeholder] Add your second project description, tech stack, and live demo link here.
+                    </div>
+                  </a>
+                </article>
+              </div>
+
+              <!-- Slide 3 -->
+              <div class="carousel-slide">
+                <article class="project-card">
+                  <a href="#projects" onclick="return false;">
+                    <div class="project-img-container">
+                      <img src="images/project-3.svg" alt="Project Placeholder 3">
+                    </div>
+                    <h3 class="text-primary text-responsive-h3 glow-text">
+                      <span class="sort-text" data-text="Project Three">Project Three</span>
+                    </h3>
+                    <div class="project-desc-typing text-text" data-text="[Placeholder] Add your third project description, architecture overview, and link here.">
+                      [Placeholder] Add your third project description, architecture overview, and link here.
+                    </div>
+                  </a>
+                </article>
+              </div>
+            </div>
+          </div>
+
+          <button id="carousel-next" class="carousel-nav-btn carousel-next" aria-label="Next slide">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+            </svg>
+          </button>
+        </div>
+
+        <span class="section-brace-close text-responsive-h2 glow-interactive glow-text">}</span>
+      </section>
+
+      <!-- PAGE 7: CONTACT & FOOTER -->
+      <section id="contact" class="page">
+        <header class="section-header text-responsive-h2 glow-text">
+          <div class="sort-text" data-text="CONTACT">CONTACT</div>
+          <span class="section-brace-open glow-interactive">{</span>
+        </header>
+
+        <div class="contact-layout">
+          <div>
+            <header class="text-secondary text-responsive-h3 glow-interactive glow-text">Have a project in mind?</header>
+            <div>My inbox is always open for new opportunities.</div>
+
+            <div class="contact-links">
+              <a href="https://github.com/Neri-git" target="_blank" rel="noopener noreferrer" class="contact-link-item">
+                <img src="icons/github.svg" alt="GitHub">
+                <span class="glow-interactive">Neri-git</span>
+              </a>
+              <a href="mailto:jan.kopacz@microsoft.wsei.edu.pl" class="contact-link-item">
+                <img src="icons/email.svg" alt="Email" style="transform: scale(0.85);">
+                <span class="glow-interactive">jan.kopacz@microsoft.wsei.edu.pl</span>
+              </a>
+            </div>
+          </div>
+
+          <form id="contact-form" class="contact-form">
+            <label class="form-label">
+              <span>Email</span>
+              <input required type="email" name="email" class="form-input" placeholder="your@email.com">
+            </label>
+
+            <label class="form-label">
+              <span>Subject</span>
+              <input required type="text" name="subject" class="form-input" placeholder="Project / Opportunity">
+            </label>
+
+            <label class="form-label">
+              <span>Message</span>
+              <textarea required name="body" rows="3" class="form-textarea" placeholder="Write your message here..."></textarea>
+            </label>
+
+            <button id="contact-submit-btn" type="submit" class="btn-dd btn-dd-primary text-responsive-h3">
+              <span>Submit</span>
+              <svg id="submit-spinner" style="display: none; width: 1.4em; height: 1.4em;" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid">
+                <path fill="none" stroke="currentColor" stroke-width="8" stroke-dasharray="42.76 42.76" d="M24.3 30C11.4 30 5 43.3 5 50s6.4 20 19.3 20c19.3 0 32.1-40 51.4-40 C88.6 30 95 43.3 95 50s-6.4 20-19.3 20C56.4 70 43.6 30 24.3 30z" stroke-linecap="round">
+                  <animate attributeName="stroke-dashoffset" repeatCount="indefinite" dur="1.5s" keyTimes="0;1" values="0;256.58"></animate>
+                </path>
+              </svg>
+            </button>
+          </form>
+        </div>
+
+        <span class="section-brace-close text-responsive-h2 glow-interactive glow-text">}</span>
+
+        <!-- Glowing Purple Footer -->
+        <footer class="site-footer text-responsive-h6">
+          <div class="footer-glow-hr-wrap">
+            <div class="footer-hr"></div>
+            <div class="footer-hr-blur"></div>
+          </div>
+          <div class="footer-row">
+            <div class="font-headers text-primary text-responsive-h3 glow-interactive glow-text">Jan</div>
+            <a href="mailto:jan.kopacz@microsoft.wsei.edu.pl" class="text-secondary" style="text-decoration: underline;">
+              jan.kopacz@microsoft.wsei.edu.pl
+            </a>
+          </div>
+        </footer>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="script.js"></script>
 </body>
 </html>

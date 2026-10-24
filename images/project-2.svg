@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <radialGradient id="g2a" cx="75%" cy="25%" r="60%">
+      <stop offset="0%" stop-color="#b86bff" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#0c0c0c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="g2b" cx="20%" cy="80%" r="55%">
+      <stop offset="0%" stop-color="#ff8c38" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#0c0c0c" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid2" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="450" rx="16" fill="#111115"/>
+  <rect width="800" height="450" rx="16" fill="url(#grid2)"/>
+  <rect width="800" height="450" rx="16" fill="url(#g2a)"/>
+  <rect width="800" height="450" rx="16" fill="url(#g2b)"/>
+  <rect x="1" y="1" width="798" height="448" rx="15" fill="none" stroke="#ff8c38" stroke-opacity="0.25" stroke-width="2"/>
+  <rect x="90" y="65" width="620" height="320" rx="12" fill="#0c0c0c" fill-opacity="0.85" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1.5"/>
+  <!-- Bar chart / analytics wireframe -->
+  <rect x="140" y="245" width="38" height="90" rx="5" fill="#b86bff" fill-opacity="0.45"/>
+  <rect x="195" y="195" width="38" height="140" rx="5" fill="#ff8c38" fill-opacity="0.75"/>
+  <rect x="250" y="220" width="38" height="115" rx="5" fill="#b86bff" fill-opacity="0.6"/>
+  <rect x="305" y="150" width="38" height="185" rx="5" fill="#ff8c38" fill-opacity="0.9"/>
+  <rect x="360" y="180" width="38" height="155" rx="5" fill="#b86bff" fill-opacity="0.75"/>
+  <rect x="450" y="140" width="210" height="120" rx="10" fill="#17171f" stroke="#ffffff" stroke-opacity="0.08"/>
+  <text x="555" y="205" fill="#ff8c38" font-family="monospace" font-size="14" text-anchor="middle">PLACEHOLDER 02</text>
+  <rect x="450" y="280" width="210" height="55" rx="8" fill="#b86bff" fill-opacity="0.12" stroke="#b86bff" stroke-opacity="0.4"/>
+</svg>

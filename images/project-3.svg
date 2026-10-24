@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <radialGradient id="g3a" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#ff8c38" stop-opacity="0.18"/>
+      <stop offset="50%" stop-color="#b86bff" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#0c0c0c" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid3" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="450" rx="16" fill="#111115"/>
+  <rect width="800" height="450" rx="16" fill="url(#grid3)"/>
+  <rect width="800" height="450" rx="16" fill="url(#g3a)"/>
+  <rect x="1" y="1" width="798" height="448" rx="15" fill="none" stroke="#b86bff" stroke-opacity="0.25" stroke-width="2"/>
+  <rect x="90" y="65" width="620" height="320" rx="12" fill="#0c0c0c" fill-opacity="0.85" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1.5"/>
+  <!-- Network / Cloud nodes -->
+  <line x1="250" y1="180" x2="400" y2="140" stroke="#b86bff" stroke-opacity="0.5" stroke-width="2"/>
+  <line x1="400" y1="140" x2="550" y2="195" stroke="#ff8c38" stroke-opacity="0.5" stroke-width="2"/>
+  <line x1="250" y1="180" x2="360" y2="285" stroke="#ff8c38" stroke-opacity="0.5" stroke-width="2"/>
+  <line x1="360" y1="285" x2="550" y2="195" stroke="#b86bff" stroke-opacity="0.5" stroke-width="2"/>
+  <circle cx="250" cy="180" r="24" fill="#17171f" stroke="#ff8c38" stroke-width="2.5"/>
+  <circle cx="400" cy="140" r="28" fill="#17171f" stroke="#b86bff" stroke-width="2.5"/>
+  <circle cx="550" cy="195" r="24" fill="#17171f" stroke="#ff8c38" stroke-width="2.5"/>
+  <circle cx="360" cy="285" r="22" fill="#17171f" stroke="#b86bff" stroke-width="2.5"/>
+  <rect x="460" y="295" width="180" height="42" rx="8" fill="#ff8c38" fill-opacity="0.15" stroke="#ff8c38" stroke-width="1.5"/>
+  <text x="550" y="321" fill="#ff8c38" font-family="monospace" font-size="14" text-anchor="middle">PLACEHOLDER 03</text>
+</svg>

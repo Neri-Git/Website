@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <radialGradient id="g1" cx="25%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#ff8c38" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#0c0c0c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="g2" cx="80%" cy="75%" r="55%">
+      <stop offset="0%" stop-color="#b86bff" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#0c0c0c" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid1" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="800" height="450" rx="16" fill="#111115"/>
+  <rect width="800" height="450" rx="16" fill="url(#grid1)"/>
+  <rect width="800" height="450" rx="16" fill="url(#g1)"/>
+  <rect width="800" height="450" rx="16" fill="url(#g2)"/>
+  <rect x="1" y="1" width="798" height="448" rx="15" fill="none" stroke="#b86bff" stroke-opacity="0.25" stroke-width="2"/>
+  <!-- Mock window frame -->
+  <rect x="90" y="65" width="620" height="320" rx="12" fill="#0c0c0c" fill-opacity="0.85" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1.5"/>
+  <circle cx="116" cy="90" r="6" fill="#ff8c38"/>
+  <circle cx="136" cy="90" r="6" fill="#b86bff"/>
+  <circle cx="156" cy="90" r="6" fill="#3a3a45"/>
+  <line x1="90" y1="112" x2="710" y2="112" stroke="#ffffff" stroke-opacity="0.07"/>
+  <!-- Wireframe content -->
+  <rect x="130" y="148" width="220" height="18" rx="4" fill="#ff8c38" fill-opacity="0.8"/>
+  <rect x="130" y="182" width="380" height="10" rx="3" fill="#e1e1e1" fill-opacity="0.25"/>
+  <rect x="130" y="204" width="320" height="10" rx="3" fill="#e1e1e1" fill-opacity="0.18"/>
+  <rect x="130" y="245" width="140" height="40" rx="8" fill="#b86bff" fill-opacity="0.2" stroke="#b86bff" stroke-width="1.5"/>
+  <text x="200" y="270" fill="#b86bff" font-family="monospace" font-size="14" text-anchor="middle">PLACEHOLDER 01</text>
+  <circle cx="595" cy="235" r="64" fill="none" stroke="#ff8c38" stroke-opacity="0.35" stroke-width="2" stroke-dasharray="8 6"/>
+  <circle cx="595" cy="235" r="38" fill="#ff8c38" fill-opacity="0.1" stroke="#b86bff" stroke-opacity="0.6" stroke-width="2"/>
+</svg>
