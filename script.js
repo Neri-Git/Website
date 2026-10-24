@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Jan Kopacz Portfolio — Orange & Purple Edition
+   Jan Kopacz Portfolio — High-Performance Orange & Purple Edition
    ========================================================================== */
 
 const PAGES = ['landing', 'about', 'skills', 'work', 'talk', 'projects', 'contact'];
@@ -11,13 +11,12 @@ let introFinished = false;
 const pointer = {
   x: window.innerWidth / 2,
   y: window.innerHeight / 2,
-  ndcX: 0,
-  ndcY: 0,
+  lastX: window.innerWidth / 2,
+  lastY: window.innerHeight / 2,
   isDown: false,
   hasMoved: false
 };
 
-// 20 trail points in NDC (-1..1) and screen pixels
 const TRAIL_COUNT = 20;
 const trailPoints = Array.from({ length: TRAIL_COUNT }, () => ({ x: 0, y: 0, z: 0 }));
 const trailScreenPoints = Array.from({ length: TRAIL_COUNT }, () => ({
@@ -26,28 +25,36 @@ const trailScreenPoints = Array.from({ length: TRAIL_COUNT }, () => ({
 }));
 
 /* ==========================================================================
-   1. WEBGL POLYLINE MOUSE-HOLD TRAIL (Exact ddaniel.dev OGL Shader & Physics)
+   1. HIGH-PERFORMANCE WEBGL POLYLINE MOUSE-HOLD TRAIL
    ========================================================================== */
 function initTrail() {
   const canvas = document.getElementById('trail-canvas');
   if (!canvas) return;
 
-  const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false });
+  const gl = canvas.getContext('webgl', {
+    alpha: true,
+    antialias: true,
+    depth: false,
+    stencil: false,
+    premultipliedAlpha: false,
+    powerPreference: 'high-performance'
+  });
   if (!gl) return;
 
   let width = window.innerWidth;
   let height = window.innerHeight;
-  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let dpr = Math.min(window.devicePixelRatio || 1, 1.75);
 
   function resize() {
     width = window.innerWidth;
     height = window.innerHeight;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 1.75);
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     gl.viewport(0, 0, canvas.width, canvas.height);
+    scheduleGlowCacheRefresh(100);
   }
-  window.addEventListener('resize', resize, false);
+  window.addEventListener('resize', resize, { passive: true });
   resize();
 
   const vertexShaderSrc = `
@@ -60,6 +67,8 @@ function initTrail() {
     uniform vec2 uResolution;
     uniform float uDPR;
     uniform float uThickness;
+
+    varying vec2 vUv;
 
     vec4 getPosition() {
       vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
@@ -83,15 +92,22 @@ function initTrail() {
     }
 
     void main() {
+      vUv = uv;
       gl_Position = getPosition();
     }
   `;
 
+  // GPU shader renders both crisp orange core and soft outer glow with zero CSS filter cost
   const fragmentShaderSrc = `
-    precision highp float;
+    precision mediump float;
     uniform vec3 uColor;
+    varying vec2 vUv;
+
     void main() {
-      gl_FragColor = vec4(uColor, 1.0);
+      float edgeDist = abs(vUv.x - 0.5) * 2.0;
+      float alpha = smoothstep(1.0, 0.2, edgeDist);
+      vec3 coreBoost = mix(vec3(1.0, 0.78, 0.52), uColor, smoothstep(0.0, 0.55, edgeDist));
+      gl_FragColor = vec4(coreBoost, alpha);
     }
   `;
 
@@ -109,6 +125,9 @@ function initTrail() {
   gl.attachShader(program, fs);
   gl.linkProgram(program);
   gl.useProgram(program);
+
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   const count = TRAIL_COUNT;
   const positionData = new Float32Array(count * 3 * 2);
@@ -143,56 +162,48 @@ function initTrail() {
   const uvBuf = makeBuffer(gl.ARRAY_BUFFER, uvData, gl.STATIC_DRAW);
   const idxBuf = makeBuffer(gl.ELEMENT_ARRAY_BUFFER, indexData, gl.STATIC_DRAW);
 
-  function bindAttrib(buf, name, size) {
-    const loc = gl.getAttribLocation(program, name);
-    if (loc === -1) return;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
-  }
+  const posLoc = gl.getAttribLocation(program, 'position');
+  const prevLoc = gl.getAttribLocation(program, 'prev');
+  const nextLoc = gl.getAttribLocation(program, 'next');
+  const sideLoc = gl.getAttribLocation(program, 'side');
+  const uvLoc = gl.getAttribLocation(program, 'uv');
+
+  // Bind static attributes once
+  gl.bindBuffer(gl.ARRAY_BUFFER, sideBuf);
+  gl.enableVertexAttribArray(sideLoc);
+  gl.vertexAttribPointer(sideLoc, 1, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+  gl.enableVertexAttribArray(uvLoc);
+  gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
 
   const uResolutionLoc = gl.getUniformLocation(program, 'uResolution');
   const uDPRLoc = gl.getUniformLocation(program, 'uDPR');
   const uThicknessLoc = gl.getUniformLocation(program, 'uThickness');
   const uColorLoc = gl.getUniformLocation(program, 'uColor');
 
-  // Neon Orange (#ff8c38)
   gl.uniform3f(uColorLoc, 1.0, 0.549, 0.22);
-  gl.uniform1f(uThicknessLoc, 22.0);
+  gl.uniform1f(uThicknessLoc, 24.0);
 
   const spring = 0.1;
   const friction = 0.5;
   const velocity = { x: 0, y: 0 };
   const targetNDC = { x: 0, y: 0 };
 
-  function updateTargetFromEvent(e) {
-    let clientX, clientY;
-    if (e.changedTouches && e.changedTouches.length) {
-      clientX = e.changedTouches[0].clientX;
-      clientY = e.changedTouches[0].clientY;
-    } else {
-      clientX = e.clientX;
-      clientY = e.clientY;
-    }
-    pointer.x = clientX;
-    pointer.y = clientY;
-    pointer.hasMoved = true;
-
-    if (pointer.isDown || ('ontouchstart' in window)) {
-      targetNDC.x = (clientX / width) * 2 - 1;
-      targetNDC.y = (clientY / height) * -2 + 1;
-    }
-  }
-
   window.addEventListener('mousedown', (e) => {
     pointer.isDown = true;
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    pointer.hasMoved = true;
     targetNDC.x = (e.clientX / width) * 2 - 1;
     targetNDC.y = (e.clientY / height) * -2 + 1;
-  });
+  }, { passive: true });
 
   window.addEventListener('mouseup', () => {
     pointer.isDown = false;
-  });
+  }, { passive: true });
 
   window.addEventListener('mousemove', (e) => {
     pointer.x = e.clientX;
@@ -205,12 +216,24 @@ function initTrail() {
   }, { passive: true });
 
   window.addEventListener('touchstart', (e) => {
+    if (!e.changedTouches.length) return;
     pointer.isDown = true;
-    updateTargetFromEvent(e);
+    const t = e.changedTouches[0];
+    pointer.x = t.clientX;
+    pointer.y = t.clientY;
+    pointer.hasMoved = true;
+    targetNDC.x = (t.clientX / width) * 2 - 1;
+    targetNDC.y = (t.clientY / height) * -2 + 1;
   }, { passive: true });
 
   window.addEventListener('touchmove', (e) => {
-    updateTargetFromEvent(e);
+    if (!e.changedTouches.length) return;
+    const t = e.changedTouches[0];
+    pointer.x = t.clientX;
+    pointer.y = t.clientY;
+    pointer.hasMoved = true;
+    targetNDC.x = (t.clientX / width) * 2 - 1;
+    targetNDC.y = (t.clientY / height) * -2 + 1;
   }, { passive: true });
 
   window.addEventListener('touchend', () => {
@@ -230,18 +253,14 @@ function initTrail() {
 
       if (i === 0) {
         const nextPt = trailPoints[1];
-        const px = pt.x - nextPt.x + pt.x;
-        const py = pt.y - nextPt.y + pt.y;
-        setVec3Pair(prevData, 0, px, py, 0);
+        setVec3Pair(prevData, 0, pt.x - nextPt.x + pt.x, pt.y - nextPt.y + pt.y, 0);
       } else {
         setVec3Pair(nextData, i - 1, pt.x, pt.y, pt.z);
       }
 
       if (i === count - 1) {
         const prevPt = trailPoints[count - 2];
-        const nx = pt.x - prevPt.x + pt.x;
-        const ny = pt.y - prevPt.y + pt.y;
-        setVec3Pair(nextData, count - 1, nx, ny, 0);
+        setVec3Pair(nextData, count - 1, pt.x - prevPt.x + pt.x, pt.y - prevPt.y + pt.y, 0);
       } else {
         setVec3Pair(prevData, i + 1, pt.x, pt.y, pt.z);
       }
@@ -249,10 +268,18 @@ function initTrail() {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, positionData);
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLoc);
+
     gl.bindBuffer(gl.ARRAY_BUFFER, prevBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, prevData);
+    gl.vertexAttribPointer(prevLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(prevLoc);
+
     gl.bindBuffer(gl.ARRAY_BUFFER, nextBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, nextData);
+    gl.vertexAttribPointer(nextLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(nextLoc);
   }
 
   function animate() {
@@ -275,33 +302,29 @@ function initTrail() {
       trailScreenPoints[i].y = ((1 - trailPoints[i].y) * 0.5) * height;
     }
 
-    updatePolylineGeometry();
+    const head = trailScreenPoints[0];
+    const tail = trailScreenPoints[count - 1];
+    const trailSpan = Math.hypot(head.x - tail.x, head.y - tail.y);
 
+    // Only draw WebGL trail triangles when trail is visible
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
 
-    gl.useProgram(program);
-    gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
-    gl.uniform1f(uDPRLoc, dpr);
+    if (trailSpan > 0.5 || pointer.isDown) {
+      updatePolylineGeometry();
+      gl.uniform2f(uResolutionLoc, canvas.width, canvas.height);
+      gl.uniform1f(uDPRLoc, dpr);
+      gl.drawElements(gl.TRIANGLES, indexData.length, gl.UNSIGNED_SHORT, 0);
+    }
 
-    bindAttrib(posBuf, 'position', 3);
-    bindAttrib(prevBuf, 'prev', 3);
-    bindAttrib(nextBuf, 'next', 3);
-    bindAttrib(sideBuf, 'side', 1);
-    bindAttrib(uvBuf, 'uv', 2);
-
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-    gl.drawElements(gl.TRIANGLES, indexData.length, gl.UNSIGNED_SHORT, 0);
-
-    updateGlowingTextInteraction();
+    updateGlowingTextInteraction(trailSpan);
   }
 
   requestAnimationFrame(animate);
 }
 
 /* ==========================================================================
-   2. INTERACTIVE 3D ORANGE CUBE (27 Sub-Cubes Splitting, Shifting, Spinning)
-      + VIDEO GAME LOADING BAR
+   2. INTERACTIVE 3D ORANGE CUBE + VIDEO GAME LOADING BAR
    ========================================================================== */
 function initCubeLoader() {
   const introScreen = document.getElementById('intro-screen');
@@ -331,14 +354,12 @@ function initCubeLoader() {
   window.addEventListener('resize', resizeCubeCanvas);
   resizeCubeCanvas();
 
-  // Build 3x3x3 = 27 sub-cubes
   const subCubes = [];
   for (let ix = -1; ix <= 1; ix++) {
     for (let iy = -1; iy <= 1; iy++) {
       for (let iz = -1; iz <= 1; iz++) {
         subCubes.push({
           ix, iy, iz,
-          // Dynamic offsets for cursor push & shockwave
           pushX: 0, pushY: 0, pushZ: 0,
           vx: 0, vy: 0, vz: 0,
           hoverHeat: 0,
@@ -348,9 +369,8 @@ function initCubeLoader() {
     }
   }
 
-  // Orbiting glowing energy particles around the cube
-  const particles = Array.from({ length: 38 }, (_, i) => ({
-    angle: (i / 38) * Math.PI * 2,
+  const particles = Array.from({ length: 34 }, (_, i) => ({
+    angle: (i / 34) * Math.PI * 2,
     radius: 135 + (i % 5) * 28,
     yOffset: ((i % 7) - 3) * 32,
     speed: 0.4 + (i % 4) * 0.22,
@@ -358,23 +378,20 @@ function initCubeLoader() {
     isPurple: i % 3 === 0
   }));
 
-  // 8 vertices of a unit cube (-0.5..0.5)
   const UNIT_VERTS = [
     [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
     [-1, -1,  1], [1, -1,  1], [1, 1,  1], [-1, 1,  1]
   ];
 
-  // 6 faces (vertex indices in counter-clockwise winding)
   const FACES = [
-    { verts: [4, 5, 6, 7], normal: [0, 0, 1] },   // Front
-    { verts: [1, 0, 3, 2], normal: [0, 0, -1] },  // Back
-    { verts: [3, 7, 6, 2], normal: [0, 1, 0] },   // Top
-    { verts: [0, 1, 5, 4], normal: [0, -1, 0] },  // Bottom
-    { verts: [5, 1, 2, 6], normal: [1, 0, 0] },   // Right
-    { verts: [0, 4, 7, 3], normal: [-1, 0, 0] }   // Left
+    { verts: [4, 5, 6, 7], normal: [0, 0, 1] },
+    { verts: [1, 0, 3, 2], normal: [0, 0, -1] },
+    { verts: [3, 7, 6, 2], normal: [0, 1, 0] },
+    { verts: [0, 1, 5, 4], normal: [0, -1, 0] },
+    { verts: [5, 1, 2, 6], normal: [1, 0, 0] },
+    { verts: [0, 4, 7, 3], normal: [-1, 0, 0] }
   ];
 
-  // Cube rotation & cursor interaction state
   let rotX = -0.45;
   let rotY = 0.65;
   let rotZ = 0.1;
@@ -395,8 +412,7 @@ function initCubeLoader() {
   }
 
   canvas.addEventListener('mousemove', (e) => {
-    updateCursorPos(e.clientX, 
-    e.clientY);
+    updateCursorPos(e.clientX, e.clientY);
     if (isDraggingCube) {
       const dx = e.clientX - lastDragX;
       const dy = e.clientY - lastDragY;
@@ -415,7 +431,6 @@ function initCubeLoader() {
     lastDragX = e.clientX;
     lastDragY = e.clientY;
     lastInteractTime = performance.now();
-    // Trigger shockwave split burst on click!
     shockwaveBurst = 1.35;
     subCubes.forEach((sc) => {
       const len = Math.hypot(sc.ix, sc.iy, sc.iz) || 1;
@@ -472,21 +487,17 @@ function initCubeLoader() {
     isDraggingCube = false;
   }, { passive: true });
 
-  // 3D Rotation helpers
   function rotatePoint(x, y, z, rx, ry, rz) {
-    // Rotate around X
     let cosX = Math.cos(rx), sinX = Math.sin(rx);
     let y1 = y * cosX - z * sinX;
     let z1 = y * sinX + z * cosX;
     let x1 = x;
 
-    // Rotate around Y
     let cosY = Math.cos(ry), sinY = Math.sin(ry);
     let x2 = x1 * cosY + z1 * sinY;
     let z2 = -x1 * sinY + z1 * cosY;
     let y2 = y1;
 
-    // Rotate around Z
     let cosZ = Math.cos(rz), sinZ = Math.sin(rz);
     let x3 = x2 * cosZ - y2 * sinZ;
     let y3 = x2 * sinZ + y2 * cosZ;
@@ -495,10 +506,9 @@ function initCubeLoader() {
     return [x3, y3, z3];
   }
 
-  // Video Game Loading Bar Progression
   let progress = 0;
   const startTime = performance.now();
-  const LOAD_DURATION = 5600; // 5.6 seconds
+  const LOAD_DURATION = 5400;
 
   function finishIntro() {
     if (introFinished) return;
@@ -509,6 +519,7 @@ function initCubeLoader() {
     const hash = window.location.hash.replace('#', '');
     const targetIdx = PAGES.indexOf(hash);
     goToPage(targetIdx >= 0 ? targetIdx : 0, true);
+    scheduleGlowCacheRefresh(150);
   }
 
   skipBtn.addEventListener('click', finishIntro);
@@ -518,8 +529,6 @@ function initCubeLoader() {
     requestAnimationFrame(renderCubeFrame);
 
     const t = (now - startTime) * 0.001;
-
-    // Update loading bar
     const elapsed = now - startTime;
     progress = Math.min(100, Math.floor((elapsed / LOAD_DURATION) * 100));
     if (fillEl) fillEl.style.width = `${progress}%`;
@@ -533,7 +542,6 @@ function initCubeLoader() {
       else statusEl.textContent = 'SYSTEM READY // LAUNCHING PORTFOLIO...';
     }
 
-    // Complete intro once 100% is reached (wait slightly if user is actively dragging)
     if (elapsed >= LOAD_DURATION + 450 && !isDraggingCube && (now - lastInteractTime > 900)) {
       finishIntro();
       return;
@@ -546,7 +554,6 @@ function initCubeLoader() {
     const scale = Math.min(width, height) * 0.0021;
     const fov = 560;
 
-    // Auto-spin + inertia + subtle cursor tilt
     if (!isDraggingCube) {
       rotY += 0.014 + velRotY;
       rotX += 0.007 + velRotX;
@@ -555,23 +562,18 @@ function initCubeLoader() {
       velRotY *= 0.92;
 
       if (cursorLocalX > 0) {
-        const targetTiltY = ((cursorLocalX - cx) / width) * 0.025;
-        const targetTiltX = ((cursorLocalY - cy) / height) * 0.025;
-        rotY += targetTiltY;
-        rotX += targetTiltX;
+        rotY += ((cursorLocalX - cx) / width) * 0.025;
+        rotX += ((cursorLocalY - cy) / height) * 0.025;
       }
     }
 
     shockwaveBurst *= 0.93;
 
-    // Choreographed Splitting, Shifting & Twisting Cycle
-    // Alternates smoothly between unified cube, exploded 27-part split, and sliding slices
     const breathWave = Math.pow(Math.sin(t * 1.45) * 0.5 + 0.5, 1.4);
     const baseSpacing = 33 * scale;
     const splitSpread = (breathWave * 28 + shockwaveBurst * 35) * scale;
     const cubeHalf = 14.5 * scale;
 
-    // Central glowing energy core (visible when sub-cubes split apart)
     const coreRadius = (18 + breathWave * 24 + shockwaveBurst * 18) * scale;
     const coreGrad = ctx.createRadialGradient(cx, cy, 2, cx, cy, coreRadius * 2.8);
     coreGrad.addColorStop(0, 'rgba(255, 230, 190, 0.95)');
@@ -583,19 +585,14 @@ function initCubeLoader() {
     ctx.arc(cx, cy, coreRadius * 2.8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Collect all drawable 3D faces across all 27 sub-cubes
     const renderList = [];
 
     subCubes.forEach((sc) => {
-      // Slice-shifting wave: layers slide & twist along axes
       const sliceShiftX = sc.iy === 1 ? Math.sin(t * 2.2) * 16 * scale * breathWave : 0;
       const sliceShiftY = sc.ix === -1 ? Math.cos(t * 2.0) * 16 * scale * breathWave : 0;
       const sliceShiftZ = sc.iz === 1 ? Math.sin(t * 1.8 + 1) * 16 * scale * breathWave : 0;
-
-      // Individual sub-cube floating wave
       const floatWave = Math.sin(t * 2.6 + sc.phaseOffset) * 5.5 * scale * breathWave;
 
-      // Spring physics for interactive push
       sc.vx *= 0.86;
       sc.vy *= 0.86;
       sc.vz *= 0.86;
@@ -608,17 +605,15 @@ function initCubeLoader() {
       sc.hoverHeat *= 0.92;
 
       const spacing = baseSpacing + splitSpread;
-      let centerX = sc.ix * spacing + sliceShiftX + sc.pushX + (sc.ix * floatWave);
-      let centerY = sc.iy * spacing + sliceShiftY + sc.pushY + (sc.iy * floatWave);
-      let centerZ = sc.iz * spacing + sliceShiftZ + sc.pushZ + (sc.iz * floatWave);
+      const centerX = sc.ix * spacing + sliceShiftX + sc.pushX + (sc.ix * floatWave);
+      const centerY = sc.iy * spacing + sliceShiftY + sc.pushY + (sc.iy * floatWave);
+      const centerZ = sc.iz * spacing + sliceShiftZ + sc.pushZ + (sc.iz * floatWave);
 
-      // Rotate sub-cube center in world space to check cursor proximity in 2D
       const [wcx, wcy, wcz] = rotatePoint(centerX, centerY, centerZ, rotX, rotY, rotZ);
       const pScaleCenter = fov / (fov + wcz + 260);
       const screenX = cx + wcx * pScaleCenter;
       const screenY = cy + wcy * pScaleCenter;
 
-      // Cursor interaction: if mouse is near this sub-cube on screen, push it outward & heat it up!
       const distToCursor = Math.hypot(screenX - cursorLocalX, screenY - cursorLocalY);
       const interactRadius = 95 * scale;
       if (distToCursor < interactRadius) {
@@ -630,17 +625,13 @@ function initCubeLoader() {
         sc.vz += (sc.iz / outLen) * factor * 4.2;
       }
 
-      // Local sub-cube spin when split apart
       const localSpin = (breathWave * 0.55 + sc.hoverHeat * 0.65) * Math.sin(t * 2.0 + sc.phaseOffset);
       const lRx = localSpin * sc.ix;
       const lRy = localSpin * sc.iy;
       const lRz = localSpin * sc.iz;
 
-      // Transform the 8 vertices of this sub-cube
       const worldVerts = UNIT_VERTS.map(([vx, vy, vz]) => {
-        // Local scale + spin
         const [lx, ly, lz] = rotatePoint(vx * cubeHalf, vy * cubeHalf, vz * cubeHalf, lRx, lRy, lRz);
-        // Translate to sub-cube center, then rotate by global cube rotation
         return rotatePoint(centerX + lx, centerY + ly, centerZ + lz, rotX, rotY, rotZ);
       });
 
@@ -649,7 +640,6 @@ function initCubeLoader() {
         return [cx + wx * s, cy + wy * s, wz];
       });
 
-      // Process the 6 faces
       FACES.forEach((face) => {
         const [i0, i1, i2, i3] = face.verts;
         const p0 = screenVerts[i0];
@@ -657,17 +647,12 @@ function initCubeLoader() {
         const p2 = screenVerts[i2];
         const p3 = screenVerts[i3];
 
-        // 2D cross product for backface culling
         const cross = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]);
         if (cross <= 0) return;
 
         const avgZ = (p0[2] + p1[2] + p2[2] + p3[2]) * 0.25;
-
-        // Rotate face normal for lighting
         const [lnx, lny, lnz] = rotatePoint(face.normal[0], face.normal[1], face.normal[2], lRx, lRy, lRz);
         const [wnx, wny, wnz] = rotatePoint(lnx, lny, lnz, rotX, rotY, rotZ);
-
-        // Directional light from top-left-front
         const lightDot = Math.max(0, wnx * -0.45 + wny * -0.55 + wnz * -0.7);
 
         renderList.push({
@@ -676,13 +661,11 @@ function initCubeLoader() {
           pts: [p0, p1, p2, p3],
           light: lightDot,
           heat: sc.hoverHeat,
-          splitGlow: breathWave,
           isCorner: Math.abs(sc.ix) + Math.abs(sc.iy) + Math.abs(sc.iz) === 3
         });
       });
     });
 
-    // Add orbiting 3D energy particles
     particles.forEach((pt) => {
       const a = pt.angle + t * pt.speed;
       const px = Math.cos(a) * pt.radius * scale;
@@ -700,10 +683,8 @@ function initCubeLoader() {
       });
     });
 
-    // Sort back-to-front (largest Z is farthest back)
     renderList.sort((a, b) => b.z - a.z);
 
-    // Draw sorted primitives
     renderList.forEach((item) => {
       if (item.type === 'particle') {
         ctx.fillStyle = item.isPurple ? 'rgba(184, 107, 255, 0.85)' : 'rgba(255, 140, 56, 0.9)';
@@ -721,7 +702,6 @@ function initCubeLoader() {
       ctx.lineTo(p3[0], p3[1]);
       ctx.closePath();
 
-      // Face fill: dark obsidian tinted with glowing orange & purple highlights
       const baseLit = 14 + item.light * 38;
       const heatBoost = item.heat * 130;
       const r = Math.min(255, Math.round(baseLit + item.light * 155 + heatBoost));
@@ -731,7 +711,6 @@ function initCubeLoader() {
       ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.92)`;
       ctx.fill();
 
-      // Glowing Neon Orange wireframe edges (brighter when hovered or split)
       const edgeAlpha = Math.min(1, 0.55 + item.light * 0.35 + item.heat * 0.45);
       ctx.strokeStyle = item.heat > 0.25
         ? `rgba(255, 225, 185, ${edgeAlpha})`
@@ -745,8 +724,11 @@ function initCubeLoader() {
 }
 
 /* ==========================================================================
-   3. GLOWING TEXT BRIGHTNESS & VARIABLE WEIGHT INTERACTION WITH TRAIL/HOVER
+   3. ZERO-LAYOUT-THRASHING GLOWING TEXT CACHE & INTERACTION
    ========================================================================== */
+let activeGlowCache = [];
+let cacheRefreshTimer = null;
+
 function registerGlowElement(el, options = {}) {
   if (!el || el.dataset.glowBound === 'true') return;
   el.dataset.glowBound = 'true';
@@ -768,67 +750,86 @@ function registerGlowElement(el, options = {}) {
   }
 }
 
-function updateGlowingTextInteraction() {
-  if (!pointer.hasMoved || !introFinished) return;
-
-  const head = trailScreenPoints[0];
-  const tail = trailScreenPoints[TRAIL_COUNT - 1];
-  const trailSpan = Math.hypot(head.x - tail.x, head.y - tail.y);
-  const trailActive = pointer.isDown || trailSpan > 8;
-
-  const chars = document.querySelectorAll(
-    '.page.active-page .glow-char, .navbar-desktop .glow-char, .navbar-mobile .glow-char'
+// Rebuilds screen position cache ONLY once after page settle or resize — NEVER inside 60fps loop!
+function refreshActiveGlowCache() {
+  if (!introFinished) return;
+  const spans = document.querySelectorAll(
+    '.page.active-page .glow-char:not(.whitespace), .navbar-desktop .glow-char:not(.whitespace)'
   );
-  const maxDist = trailActive ? 240 : 180;
-
-  chars.forEach((span) => {
+  const nextCache = [];
+  for (let i = 0; i < spans.length; i++) {
+    const span = spans[i];
     const rect = span.getBoundingClientRect();
-    if (rect.width === 0 && rect.height === 0) return;
+    if (rect.width === 0 && rect.height === 0) continue;
+    nextCache.push({
+      el: span,
+      cx: rect.left + rect.width * 0.5,
+      cy: rect.top + rect.height * 0.5,
+      isVarWeight: span.dataset.variableWeight === 'true',
+      isSubtle: span.dataset.subtleGlow === 'true',
+      wasLit: false
+    });
+  }
+  activeGlowCache = nextCache;
+}
 
-    const cx = rect.left + rect.width * 0.5;
-    const cy = rect.top + rect.height * 0.5;
+function scheduleGlowCacheRefresh(delayMs = 80) {
+  clearTimeout(cacheRefreshTimer);
+  cacheRefreshTimer = setTimeout(refreshActiveGlowCache, delayMs);
+}
 
-    let minDist = Math.hypot(cx - pointer.x, cy - pointer.y);
+function updateGlowingTextInteraction(trailSpan) {
+  if (!pointer.hasMoved || !introFinished || isPageTransitioning) return;
+
+  const trailActive = pointer.isDown || trailSpan > 6;
+  const cursorMoved = Math.abs(pointer.x - pointer.lastX) > 0.5 || Math.abs(pointer.y - pointer.lastY) > 0.5;
+  pointer.lastX = pointer.x;
+  pointer.lastY = pointer.y;
+
+  // Skip work completely when mouse and trail are idle
+  if (!cursorMoved && !trailActive) return;
+
+  const maxDist = trailActive ? 220 : 165;
+  const len = activeGlowCache.length;
+
+  for (let i = 0; i < len; i++) {
+    const item = activeGlowCache[i];
+    let minDist = Math.hypot(item.cx - pointer.x, item.cy - pointer.y);
 
     if (trailActive) {
-      for (let i = 0; i < TRAIL_COUNT; i += 2) {
-        const tp = trailScreenPoints[i];
-        const d = Math.hypot(cx - tp.x, cy - tp.y);
+      for (let j = 0; j < TRAIL_COUNT; j += 3) {
+        const tp = trailScreenPoints[j];
+        const d = Math.hypot(item.cx - tp.x, item.cy - tp.y);
         if (d < minDist) minDist = d;
       }
     }
 
-    const isVarWeight = span.dataset.variableWeight === 'true';
-    const isSubtle = span.dataset.subtleGlow === 'true';
-
-    if (isVarWeight) {
-      const wght = Math.max(200, Math.min(900, Math.round(900 - minDist * 2)));
-      span.style.fontVariationSettings = `'wght' ${wght}`;
+    if (item.isVarWeight) {
+      // Smooth variable weight on quote (300 to 750)
+      const wght = Math.max(300, Math.min(780, Math.round(780 - minDist * 1.8)));
+      item.el.style.fontVariationSettings = `'wght' ${wght}`;
     }
 
     if (minDist < maxDist) {
       const t = Math.pow(1 - minDist / maxDist, 1.5);
-      const boost = trailActive ? t * 1.3 : t;
+      const boost = trailActive ? t * 1.25 : t;
 
-      if (isSubtle) {
-        // Softer, toned-down glow specifically for the Quote section
-        const midBlur = (0.06 + boost * 0.14).toFixed(3);
-        const bright = (1 + boost * 0.28).toFixed(2);
-        span.style.textShadow = `0 0 ${midBlur}em currentColor`;
-        span.style.filter = `brightness(${bright})`;
+      if (item.isSubtle) {
+        // Gentle, clean glow on quote text
+        const blur = (0.04 + boost * 0.1).toFixed(3);
+        item.el.style.textShadow = `0 0 ${blur}em currentColor`;
       } else {
-        const coreBlur = (0.04 + boost * 0.14).toFixed(3);
-        const midBlur = (0.18 + boost * 0.36).toFixed(3);
-        const outerBlur = (0.34 + boost * 0.7).toFixed(3);
-        const bright = (1 + boost * 0.6).toFixed(2);
-        span.style.textShadow = `0 0 ${coreBlur}em #ffffff, 0.03em 0 ${midBlur}em currentColor, 0 0 ${outerBlur}em currentColor`;
-        span.style.filter = `brightness(${bright})`;
+        const coreBlur = (0.03 + boost * 0.1).toFixed(3);
+        const outerBlur = (0.18 + boost * 0.45).toFixed(3);
+        item.el.style.textShadow = `0 0 ${coreBlur}em #ffffff, 0 0 ${outerBlur}em currentColor`;
       }
-    } else {
-      span.style.textShadow = '';
-      span.style.filter = '';
+      item.wasLit = true;
+    } else if (item.wasLit) {
+      // Only clear style once when transitioning from lit -> unlit
+      item.el.style.textShadow = '';
+      item.wasLit = false;
     }
-  });
+  }
 }
 
 /* ==========================================================================
@@ -862,8 +863,9 @@ function scrambleElement(el) {
     if (progress >= original.length) {
       clearInterval(interval);
       el.dataset.scrambling = 'false';
+      scheduleGlowCacheRefresh(60);
     }
-    progress += 0.28;
+    progress += 0.3;
   }, 28);
 }
 
@@ -879,7 +881,6 @@ function goToPage(index, force = false) {
   currentPageIdx = index;
   const pageId = PAGES[index];
 
-  // Smoothly slide the vertical track to snap to the target page
   const track = document.getElementById('pages-track');
   if (track) {
     track.style.transform = `translate3d(0, -${index * 100}dvh, 0)`;
@@ -905,7 +906,8 @@ function goToPage(index, force = false) {
 
   setTimeout(() => {
     isPageTransitioning = false;
-  }, 760);
+    refreshActiveGlowCache();
+  }, 830);
 }
 
 const pageAnimatedState = {};
@@ -918,13 +920,11 @@ function triggerPageAnimations(pageId) {
     scrambleElement(el);
   });
 
-  // Page 5: Quote ("i have no idea what im doing / but it works lol" - Neri)
   if (pageId === 'talk' && !pageAnimatedState.talk) {
     pageAnimatedState.talk = true;
     runQuoteTypingAnimation();
   }
 
-  // Page 6: Projects descriptions typing
   if (pageId === 'projects' && !pageAnimatedState.projects) {
     pageAnimatedState.projects = true;
     pageEl.querySelectorAll('.project-desc-typing').forEach((el, i) => {
@@ -933,47 +933,63 @@ function triggerPageAnimations(pageId) {
   }
 }
 
+/* Word-grouped quote typing so words never squish or break mid-word */
 function runQuoteTypingAnimation() {
   const line1El = document.getElementById('quote-line-1');
   const line2El = document.getElementById('quote-line-2');
   const authorEl = document.getElementById('quote-author');
   if (!line1El || !line2El) return;
 
-  const text1 = '“i have no idea what im doing';
-  const text2 = 'but it works lol”';
+  const text1 = '“I have no idea what I\'m doing,';
+  const text2 = 'but it works lol.”';
 
   line1El.innerHTML = '';
   line2El.innerHTML = '';
   authorEl.textContent = '';
 
-  function typeVariableLine(container, str, delayMs) {
+  function typeWordGroupedLine(container, str, delayMs) {
     return new Promise((resolve) => {
       setTimeout(() => {
+        const words = str.split(' ');
+        const charQueue = [];
+
+        words.forEach((word) => {
+          const wordSpan = document.createElement('span');
+          wordSpan.className = 'quote-word';
+          container.appendChild(wordSpan);
+
+          for (let i = 0; i < word.length; i++) {
+            charQueue.push({ ch: word[i], parent: wordSpan });
+          }
+        });
+
         let idx = 0;
         const iv = setInterval(() => {
-          const ch = str[idx];
-          const span = document.createElement('span');
-          const isQuote = ch === '“' || ch === '”';
-          span.className = `glow-char${ch === ' ' ? ' whitespace' : ''}${isQuote ? ' text-secondary' : ''}`;
-          span.dataset.variableWeight = 'true';
-          span.dataset.subtleGlow = 'true';
-          span.style.fontVariationSettings = "'wght' 300";
-          span.textContent = ch;
-          container.appendChild(span);
-          idx++;
-          if (idx >= str.length) {
+          if (idx >= charQueue.length) {
             clearInterval(iv);
             resolve();
+            return;
           }
-        }, 60);
+          const { ch, parent } = charQueue[idx];
+          const span = document.createElement('span');
+          const isQuote = ch === '“' || ch === '”';
+          span.className = `glow-char${isQuote ? ' text-secondary' : ''}`;
+          span.dataset.variableWeight = 'true';
+          span.dataset.subtleGlow = 'true';
+          span.style.fontVariationSettings = "'wght' 320";
+          span.textContent = ch;
+          parent.appendChild(span);
+          idx++;
+        }, 45);
       }, delayMs);
     });
   }
 
-  typeVariableLine(line1El, text1, 200)
-    .then(() => typeVariableLine(line2El, text2, 250))
+  typeWordGroupedLine(line1El, text1, 150)
+    .then(() => typeWordGroupedLine(line2El, text2, 200))
     .then(() => {
-      runSimpleTyping(authorEl, '- Neri', 250);
+      runSimpleTyping(authorEl, '— Neri', 200);
+      scheduleGlowCacheRefresh(400);
     });
 }
 
@@ -1110,25 +1126,18 @@ function initTypingAlternate() {
     return new Promise((r) => setTimeout(r, ms));
   }
 
-  function renderGlowChars(container, str) {
-    container.innerHTML = str
-      .split('')
-      .map((ch) => `<span class="glow-char${ch === ' ' ? ' whitespace' : ''}">${ch}</span>`)
-      .join('');
-  }
-
   async function loop() {
     await sleep(900);
     let idx = 0;
     while (true) {
       const word = tokens[idx];
       for (let i = 1; i <= word.length; i++) {
-        renderGlowChars(el, word.slice(0, i));
+        el.textContent = word.slice(0, i);
         await sleep(typeSpeed);
       }
       await sleep(pauseTime);
       for (let i = word.length - 1; i >= 0; i--) {
-        renderGlowChars(el, word.slice(0, i));
+        el.textContent = word.slice(0, i);
         await sleep(deleteSpeed);
       }
       await sleep(250);
@@ -1148,8 +1157,6 @@ function initTimeline() {
   const workIntro = document.getElementById('work-intro-text');
   let unfocusTimeout = null;
 
-  // Default progress bar width points to 5th Semester (index 4 out of 7 nodes)
-  // justify-evenly places N items at (i + 1) / (N + 1) -> (4 + 1) / 8 = 62.5%
   const defaultIdx = 4;
   const defaultPct = ((defaultIdx + 1) / (nodes.length + 1)) * 100;
   if (activeLine) {
