@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Jan Kopacz Portfolio — Inspired by ddaniel.dev (Orange & Purple Edition)
+   Jan Kopacz Portfolio — Orange & Purple Edition
    ========================================================================== */
 
 const PAGES = ['landing', 'about', 'skills', 'work', 'talk', 'projects', 'contact'];
@@ -74,7 +74,6 @@ function initTrail() {
       float pixelWidth = 1.0 / (uResolution.y / uDPR);
       normal *= pixelWidth * uThickness;
 
-      // When the points are on top of each other, shrink the line to avoid artifacts.
       float dist = length(nextScreen - prevScreen);
       normal *= smoothstep(0.0, 0.02, dist);
 
@@ -111,7 +110,6 @@ function initTrail() {
   gl.linkProgram(program);
   gl.useProgram(program);
 
-  // Build polyline geometry buffers for TRAIL_COUNT points
   const count = TRAIL_COUNT;
   const positionData = new Float32Array(count * 3 * 2);
   const prevData = new Float32Array(count * 3 * 2);
@@ -158,11 +156,10 @@ function initTrail() {
   const uThicknessLoc = gl.getUniformLocation(program, 'uThickness');
   const uColorLoc = gl.getUniformLocation(program, 'uColor');
 
-  // Neon Orange (#ff8c38 -> 1.0, 0.549, 0.22)
+  // Neon Orange (#ff8c38)
   gl.uniform3f(uColorLoc, 1.0, 0.549, 0.22);
   gl.uniform1f(uThicknessLoc, 22.0);
 
-  // Spring physics parameters matching ddaniel.dev (Jv = 0.1, Zv = 0.5)
   const spring = 0.1;
   const friction = 0.5;
   const velocity = { x: 0, y: 0 };
@@ -187,14 +184,10 @@ function initTrail() {
     }
   }
 
-  // Always track hover position for glowing text interaction,
-  // and update trail target when holding mouse button down!
   window.addEventListener('mousedown', (e) => {
     pointer.isDown = true;
-    const snapX = (e.clientX / width) * 2 - 1;
-    const snapY = (e.clientY / height) * -2 + 1;
-    targetNDC.x = snapX;
-    targetNDC.y = snapY;
+    targetNDC.x = (e.clientX / width) * 2 - 1;
+    targetNDC.y = (e.clientY / height) * -2 + 1;
   });
 
   window.addEventListener('mouseup', () => {
@@ -265,7 +258,6 @@ function initTrail() {
   function animate() {
     requestAnimationFrame(animate);
 
-    // Update trail points physics
     for (let i = count - 1; i >= 0; i--) {
       if (i === 0) {
         const dx = (targetNDC.x - trailPoints[0].x) * spring;
@@ -279,7 +271,6 @@ function initTrail() {
         trailPoints[i].y += (trailPoints[i - 1].y - trailPoints[i].y) * 0.9;
       }
 
-      // Convert NDC back to screen pixels for glowing text interaction
       trailScreenPoints[i].x = ((trailPoints[i].x + 1) * 0.5) * width;
       trailScreenPoints[i].y = ((1 - trailPoints[i].y) * 0.5) * height;
     }
@@ -302,7 +293,6 @@ function initTrail() {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
     gl.drawElements(gl.TRIANGLES, indexData.length, gl.UNSIGNED_SHORT, 0);
 
-    // Update glowing text interaction with cursor & trail!
     updateGlowingTextInteraction();
   }
 
@@ -310,10 +300,453 @@ function initTrail() {
 }
 
 /* ==========================================================================
-   2. GLOWING TEXT BRIGHTNESS & VARIABLE WEIGHT INTERACTION WITH TRAIL/HOVER
+   2. INTERACTIVE 3D ORANGE CUBE (27 Sub-Cubes Splitting, Shifting, Spinning)
+      + VIDEO GAME LOADING BAR
    ========================================================================== */
-const trackedGlowChars = [];
+function initCubeLoader() {
+  const introScreen = document.getElementById('intro-screen');
+  const mainSite = document.getElementById('main-site');
+  const skipBtn = document.getElementById('skip-intro-btn');
+  const canvas = document.getElementById('cube-loader-canvas');
+  const statusEl = document.getElementById('game-loader-status');
+  const pctEl = document.getElementById('game-loader-pct');
+  const fillEl = document.getElementById('game-bar-fill');
 
+  if (!canvas || !introScreen) return;
+  const ctx = canvas.getContext('2d');
+
+  let width = 0;
+  let height = 0;
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resizeCubeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    width = rect.width || window.innerWidth;
+    height = rect.height || window.innerHeight * 0.65;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCubeCanvas);
+  resizeCubeCanvas();
+
+  // Build 3x3x3 = 27 sub-cubes
+  const subCubes = [];
+  for (let ix = -1; ix <= 1; ix++) {
+    for (let iy = -1; iy <= 1; iy++) {
+      for (let iz = -1; iz <= 1; iz++) {
+        subCubes.push({
+          ix, iy, iz,
+          // Dynamic offsets for cursor push & shockwave
+          pushX: 0, pushY: 0, pushZ: 0,
+          vx: 0, vy: 0, vz: 0,
+          hoverHeat: 0,
+          phaseOffset: (ix * 1.7 + iy * 2.3 + iz * 3.1)
+        });
+      }
+    }
+  }
+
+  // Orbiting glowing energy particles around the cube
+  const particles = Array.from({ length: 38 }, (_, i) => ({
+    angle: (i / 38) * Math.PI * 2,
+    radius: 135 + (i % 5) * 28,
+    yOffset: ((i % 7) - 3) * 32,
+    speed: 0.4 + (i % 4) * 0.22,
+    size: 1.8 + (i % 3) * 1.1,
+    isPurple: i % 3 === 0
+  }));
+
+  // 8 vertices of a unit cube (-0.5..0.5)
+  const UNIT_VERTS = [
+    [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+    [-1, -1,  1], [1, -1,  1], [1, 1,  1], [-1, 1,  1]
+  ];
+
+  // 6 faces (vertex indices in counter-clockwise winding)
+  const FACES = [
+    { verts: [4, 5, 6, 7], normal: [0, 0, 1] },   // Front
+    { verts: [1, 0, 3, 2], normal: [0, 0, -1] },  // Back
+    { verts: [3, 7, 6, 2], normal: [0, 1, 0] },   // Top
+    { verts: [0, 1, 5, 4], normal: [0, -1, 0] },  // Bottom
+    { verts: [5, 1, 2, 6], normal: [1, 0, 0] },   // Right
+    { verts: [0, 4, 7, 3], normal: [-1, 0, 0] }   // Left
+  ];
+
+  // Cube rotation & cursor interaction state
+  let rotX = -0.45;
+  let rotY = 0.65;
+  let rotZ = 0.1;
+  let velRotX = 0;
+  let velRotY = 0;
+  let isDraggingCube = false;
+  let lastDragX = 0;
+  let lastDragY = 0;
+  let cursorLocalX = -9999;
+  let cursorLocalY = -9999;
+  let shockwaveBurst = 0;
+  let lastInteractTime = 0;
+
+  function updateCursorPos(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    cursorLocalX = clientX - rect.left;
+    cursorLocalY = clientY - rect.top;
+  }
+
+  canvas.addEventListener('mousemove', (e) => {
+    updateCursorPos(e.clientX, 
+    e.clientY);
+    if (isDraggingCube) {
+      const dx = e.clientX - lastDragX;
+      const dy = e.clientY - lastDragY;
+      velRotY = dx * 0.012;
+      velRotX = dy * 0.012;
+      rotY += velRotY;
+      rotX += velRotX;
+      lastDragX = e.clientX;
+      lastDragY = e.clientY;
+      lastInteractTime = performance.now();
+    }
+  });
+
+  canvas.addEventListener('mousedown', (e) => {
+    isDraggingCube = true;
+    lastDragX = e.clientX;
+    lastDragY = e.clientY;
+    lastInteractTime = performance.now();
+    // Trigger shockwave split burst on click!
+    shockwaveBurst = 1.35;
+    subCubes.forEach((sc) => {
+      const len = Math.hypot(sc.ix, sc.iy, sc.iz) || 1;
+      sc.vx += (sc.ix / len) * 28 + (Math.random() - 0.5) * 14;
+      sc.vy += (sc.iy / len) * 28 + (Math.random() - 0.5) * 14;
+      sc.vz += (sc.iz / len) * 28 + (Math.random() - 0.5) * 14;
+      sc.hoverHeat = 1.0;
+    });
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDraggingCube = false;
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    cursorLocalX = -9999;
+    cursorLocalY = -9999;
+  });
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (!e.touches.length) return;
+    isDraggingCube = true;
+    lastDragX = e.touches[0].clientX;
+    lastDragY = e.touches[0].clientY;
+    updateCursorPos(lastDragX, lastDragY);
+    lastInteractTime = performance.now();
+    shockwaveBurst = 1.25;
+    subCubes.forEach((sc) => {
+      const len = Math.hypot(sc.ix, sc.iy, sc.iz) || 1;
+      sc.vx += (sc.ix / len) * 24;
+      sc.vy += (sc.iy / len) * 24;
+      sc.vz += (sc.iz / len) * 24;
+      sc.hoverHeat = 1.0;
+    });
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (!e.touches.length) return;
+    const tx = e.touches[0].clientX;
+    const ty = e.touches[0].clientY;
+    updateCursorPos(tx, ty);
+    const dx = tx - lastDragX;
+    const dy = ty - lastDragY;
+    velRotY = dx * 0.012;
+    velRotX = dy * 0.012;
+    rotY += velRotY;
+    rotX += velRotX;
+    lastDragX = tx;
+    lastDragY = ty;
+    lastInteractTime = performance.now();
+  }, { passive: true });
+
+  canvas.addEventListener('touchend', () => {
+    isDraggingCube = false;
+  }, { passive: true });
+
+  // 3D Rotation helpers
+  function rotatePoint(x, y, z, rx, ry, rz) {
+    // Rotate around X
+    let cosX = Math.cos(rx), sinX = Math.sin(rx);
+    let y1 = y * cosX - z * sinX;
+    let z1 = y * sinX + z * cosX;
+    let x1 = x;
+
+    // Rotate around Y
+    let cosY = Math.cos(ry), sinY = Math.sin(ry);
+    let x2 = x1 * cosY + z1 * sinY;
+    let z2 = -x1 * sinY + z1 * cosY;
+    let y2 = y1;
+
+    // Rotate around Z
+    let cosZ = Math.cos(rz), sinZ = Math.sin(rz);
+    let x3 = x2 * cosZ - y2 * sinZ;
+    let y3 = x2 * sinZ + y2 * cosZ;
+    let z3 = z2;
+
+    return [x3, y3, z3];
+  }
+
+  // Video Game Loading Bar Progression
+  let progress = 0;
+  const startTime = performance.now();
+  const LOAD_DURATION = 5600; // 5.6 seconds
+
+  function finishIntro() {
+    if (introFinished) return;
+    introFinished = true;
+    introScreen.classList.add('hidden-screen');
+    mainSite.classList.add('visible');
+
+    const hash = window.location.hash.replace('#', '');
+    const targetIdx = PAGES.indexOf(hash);
+    goToPage(targetIdx >= 0 ? targetIdx : 0, true);
+  }
+
+  skipBtn.addEventListener('click', finishIntro);
+
+  function renderCubeFrame(now) {
+    if (introFinished) return;
+    requestAnimationFrame(renderCubeFrame);
+
+    const t = (now - startTime) * 0.001;
+
+    // Update loading bar
+    const elapsed = now - startTime;
+    progress = Math.min(100, Math.floor((elapsed / LOAD_DURATION) * 100));
+    if (fillEl) fillEl.style.width = `${progress}%`;
+    if (pctEl) pctEl.textContent = `${progress}%`;
+
+    if (statusEl) {
+      if (progress < 25) statusEl.textContent = 'INITIALIZING 3D VOXEL CORE...';
+      else if (progress < 52) statusEl.textContent = 'LOADING SQL SCHEMAS & DATA MODULES...';
+      else if (progress < 78) statusEl.textContent = 'COMPILING NEON SHADERS & GLOW ENGINE...';
+      else if (progress < 100) statusEl.textContent = 'SYNCHRONIZING INTERACTIVE CUBE MATRIX...';
+      else statusEl.textContent = 'SYSTEM READY // LAUNCHING PORTFOLIO...';
+    }
+
+    // Complete intro once 100% is reached (wait slightly if user is actively dragging)
+    if (elapsed >= LOAD_DURATION + 450 && !isDraggingCube && (now - lastInteractTime > 900)) {
+      finishIntro();
+      return;
+    }
+
+    ctx.clearRect(0, 0, width, height);
+
+    const cx = width * 0.5;
+    const cy = height * 0.52;
+    const scale = Math.min(width, height) * 0.0021;
+    const fov = 560;
+
+    // Auto-spin + inertia + subtle cursor tilt
+    if (!isDraggingCube) {
+      rotY += 0.014 + velRotY;
+      rotX += 0.007 + velRotX;
+      rotZ = Math.sin(t * 0.7) * 0.18;
+      velRotX *= 0.92;
+      velRotY *= 0.92;
+
+      if (cursorLocalX > 0) {
+        const targetTiltY = ((cursorLocalX - cx) / width) * 0.025;
+        const targetTiltX = ((cursorLocalY - cy) / height) * 0.025;
+        rotY += targetTiltY;
+        rotX += targetTiltX;
+      }
+    }
+
+    shockwaveBurst *= 0.93;
+
+    // Choreographed Splitting, Shifting & Twisting Cycle
+    // Alternates smoothly between unified cube, exploded 27-part split, and sliding slices
+    const breathWave = Math.pow(Math.sin(t * 1.45) * 0.5 + 0.5, 1.4);
+    const baseSpacing = 33 * scale;
+    const splitSpread = (breathWave * 28 + shockwaveBurst * 35) * scale;
+    const cubeHalf = 14.5 * scale;
+
+    // Central glowing energy core (visible when sub-cubes split apart)
+    const coreRadius = (18 + breathWave * 24 + shockwaveBurst * 18) * scale;
+    const coreGrad = ctx.createRadialGradient(cx, cy, 2, cx, cy, coreRadius * 2.8);
+    coreGrad.addColorStop(0, 'rgba(255, 230, 190, 0.95)');
+    coreGrad.addColorStop(0.3, 'rgba(255, 140, 56, 0.65)');
+    coreGrad.addColorStop(0.65, 'rgba(184, 107, 255, 0.25)');
+    coreGrad.addColorStop(1, 'rgba(12, 12, 12, 0)');
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreRadius * 2.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Collect all drawable 3D faces across all 27 sub-cubes
+    const renderList = [];
+
+    subCubes.forEach((sc) => {
+      // Slice-shifting wave: layers slide & twist along axes
+      const sliceShiftX = sc.iy === 1 ? Math.sin(t * 2.2) * 16 * scale * breathWave : 0;
+      const sliceShiftY = sc.ix === -1 ? Math.cos(t * 2.0) * 16 * scale * breathWave : 0;
+      const sliceShiftZ = sc.iz === 1 ? Math.sin(t * 1.8 + 1) * 16 * scale * breathWave : 0;
+
+      // Individual sub-cube floating wave
+      const floatWave = Math.sin(t * 2.6 + sc.phaseOffset) * 5.5 * scale * breathWave;
+
+      // Spring physics for interactive push
+      sc.vx *= 0.86;
+      sc.vy *= 0.86;
+      sc.vz *= 0.86;
+      sc.pushX += sc.vx * 0.15;
+      sc.pushY += sc.vy * 0.15;
+      sc.pushZ += sc.vz * 0.15;
+      sc.pushX *= 0.88;
+      sc.pushY *= 0.88;
+      sc.pushZ *= 0.88;
+      sc.hoverHeat *= 0.92;
+
+      const spacing = baseSpacing + splitSpread;
+      let centerX = sc.ix * spacing + sliceShiftX + sc.pushX + (sc.ix * floatWave);
+      let centerY = sc.iy * spacing + sliceShiftY + sc.pushY + (sc.iy * floatWave);
+      let centerZ = sc.iz * spacing + sliceShiftZ + sc.pushZ + (sc.iz * floatWave);
+
+      // Rotate sub-cube center in world space to check cursor proximity in 2D
+      const [wcx, wcy, wcz] = rotatePoint(centerX, centerY, centerZ, rotX, rotY, rotZ);
+      const pScaleCenter = fov / (fov + wcz + 260);
+      const screenX = cx + wcx * pScaleCenter;
+      const screenY = cy + wcy * pScaleCenter;
+
+      // Cursor interaction: if mouse is near this sub-cube on screen, push it outward & heat it up!
+      const distToCursor = Math.hypot(screenX - cursorLocalX, screenY - cursorLocalY);
+      const interactRadius = 95 * scale;
+      if (distToCursor < interactRadius) {
+        const factor = Math.pow(1 - distToCursor / interactRadius, 1.5);
+        sc.hoverHeat = Math.min(1, sc.hoverHeat + factor * 0.35);
+        const outLen = Math.hypot(sc.ix, sc.iy, sc.iz) || 1;
+        sc.vx += (sc.ix / outLen) * factor * 4.2;
+        sc.vy += (sc.iy / outLen) * factor * 4.2;
+        sc.vz += (sc.iz / outLen) * factor * 4.2;
+      }
+
+      // Local sub-cube spin when split apart
+      const localSpin = (breathWave * 0.55 + sc.hoverHeat * 0.65) * Math.sin(t * 2.0 + sc.phaseOffset);
+      const lRx = localSpin * sc.ix;
+      const lRy = localSpin * sc.iy;
+      const lRz = localSpin * sc.iz;
+
+      // Transform the 8 vertices of this sub-cube
+      const worldVerts = UNIT_VERTS.map(([vx, vy, vz]) => {
+        // Local scale + spin
+        const [lx, ly, lz] = rotatePoint(vx * cubeHalf, vy * cubeHalf, vz * cubeHalf, lRx, lRy, lRz);
+        // Translate to sub-cube center, then rotate by global cube rotation
+        return rotatePoint(centerX + lx, centerY + ly, centerZ + lz, rotX, rotY, rotZ);
+      });
+
+      const screenVerts = worldVerts.map(([wx, wy, wz]) => {
+        const s = fov / (fov + wz + 260);
+        return [cx + wx * s, cy + wy * s, wz];
+      });
+
+      // Process the 6 faces
+      FACES.forEach((face) => {
+        const [i0, i1, i2, i3] = face.verts;
+        const p0 = screenVerts[i0];
+        const p1 = screenVerts[i1];
+        const p2 = screenVerts[i2];
+        const p3 = screenVerts[i3];
+
+        // 2D cross product for backface culling
+        const cross = (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]);
+        if (cross <= 0) return;
+
+        const avgZ = (p0[2] + p1[2] + p2[2] + p3[2]) * 0.25;
+
+        // Rotate face normal for lighting
+        const [lnx, lny, lnz] = rotatePoint(face.normal[0], face.normal[1], face.normal[2], lRx, lRy, lRz);
+        const [wnx, wny, wnz] = rotatePoint(lnx, lny, lnz, rotX, rotY, rotZ);
+
+        // Directional light from top-left-front
+        const lightDot = Math.max(0, wnx * -0.45 + wny * -0.55 + wnz * -0.7);
+
+        renderList.push({
+          type: 'face',
+          z: avgZ,
+          pts: [p0, p1, p2, p3],
+          light: lightDot,
+          heat: sc.hoverHeat,
+          splitGlow: breathWave,
+          isCorner: Math.abs(sc.ix) + Math.abs(sc.iy) + Math.abs(sc.iz) === 3
+        });
+      });
+    });
+
+    // Add orbiting 3D energy particles
+    particles.forEach((pt) => {
+      const a = pt.angle + t * pt.speed;
+      const px = Math.cos(a) * pt.radius * scale;
+      const pz = Math.sin(a) * pt.radius * scale;
+      const py = (pt.yOffset + Math.sin(t * 2 + pt.angle) * 18) * scale;
+      const [wx, wy, wz] = rotatePoint(px, py, pz, rotX * 0.5, rotY * 0.6, 0);
+      const s = fov / (fov + wz + 260);
+      renderList.push({
+        type: 'particle',
+        z: wz,
+        x: cx + wx * s,
+        y: cy + wy * s,
+        r: pt.size * s * scale,
+        isPurple: pt.isPurple
+      });
+    });
+
+    // Sort back-to-front (largest Z is farthest back)
+    renderList.sort((a, b) => b.z - a.z);
+
+    // Draw sorted primitives
+    renderList.forEach((item) => {
+      if (item.type === 'particle') {
+        ctx.fillStyle = item.isPurple ? 'rgba(184, 107, 255, 0.85)' : 'rgba(255, 140, 56, 0.9)';
+        ctx.beginPath();
+        ctx.arc(item.x, item.y, Math.max(1, item.r), 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+
+      const [p0, p1, p2, p3] = item.pts;
+      ctx.beginPath();
+      ctx.moveTo(p0[0], p0[1]);
+      ctx.lineTo(p1[0], p1[1]);
+      ctx.lineTo(p2[0], p2[1]);
+      ctx.lineTo(p3[0], p3[1]);
+      ctx.closePath();
+
+      // Face fill: dark obsidian tinted with glowing orange & purple highlights
+      const baseLit = 14 + item.light * 38;
+      const heatBoost = item.heat * 130;
+      const r = Math.min(255, Math.round(baseLit + item.light * 155 + heatBoost));
+      const g = Math.min(255, Math.round(baseLit * 0.65 + item.light * 65 + heatBoost * 0.65));
+      const b = Math.min(255, Math.round(baseLit * 0.9 + (item.isCorner ? 35 : 10) + heatBoost * 0.25));
+
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.92)`;
+      ctx.fill();
+
+      // Glowing Neon Orange wireframe edges (brighter when hovered or split)
+      const edgeAlpha = Math.min(1, 0.55 + item.light * 0.35 + item.heat * 0.45);
+      ctx.strokeStyle = item.heat > 0.25
+        ? `rgba(255, 225, 185, ${edgeAlpha})`
+        : `rgba(255, 140, 56, ${edgeAlpha})`;
+      ctx.lineWidth = (1.35 + item.heat * 1.4) * scale;
+      ctx.stroke();
+    });
+  }
+
+  requestAnimationFrame(renderCubeFrame);
+}
+
+/* ==========================================================================
+   3. GLOWING TEXT BRIGHTNESS & VARIABLE WEIGHT INTERACTION WITH TRAIL/HOVER
+   ========================================================================== */
 function registerGlowElement(el, options = {}) {
   if (!el || el.dataset.glowBound === 'true') return;
   el.dataset.glowBound = 'true';
@@ -328,21 +761,21 @@ function registerGlowElement(el, options = {}) {
     if (options.variableWeight) {
       span.dataset.variableWeight = 'true';
     }
+    if (options.subtleGlow) {
+      span.dataset.subtleGlow = 'true';
+    }
     el.appendChild(span);
-    trackedGlowChars.push(span);
   }
 }
 
 function updateGlowingTextInteraction() {
   if (!pointer.hasMoved || !introFinished) return;
 
-  // Check how spread out the trail currently is (i.e. actively moving)
   const head = trailScreenPoints[0];
   const tail = trailScreenPoints[TRAIL_COUNT - 1];
   const trailSpan = Math.hypot(head.x - tail.x, head.y - tail.y);
   const trailActive = pointer.isDown || trailSpan > 8;
 
-  // Find all interactive glow characters inside the active page and top navbar
   const chars = document.querySelectorAll(
     '.page.active-page .glow-char, .navbar-desktop .glow-char, .navbar-mobile .glow-char'
   );
@@ -355,10 +788,8 @@ function updateGlowingTextInteraction() {
     const cx = rect.left + rect.width * 0.5;
     const cy = rect.top + rect.height * 0.5;
 
-    // Distance to live mouse cursor
     let minDist = Math.hypot(cx - pointer.x, cy - pointer.y);
 
-    // Also check distance to the active mouse-click trail segments!
     if (trailActive) {
       for (let i = 0; i < TRAIL_COUNT; i += 2) {
         const tp = trailScreenPoints[i];
@@ -368,23 +799,31 @@ function updateGlowingTextInteraction() {
     }
 
     const isVarWeight = span.dataset.variableWeight === 'true';
+    const isSubtle = span.dataset.subtleGlow === 'true';
 
     if (isVarWeight) {
-      // Exact ddaniel.dev VariableFontTypingText formula: 900 - E * 2
       const wght = Math.max(200, Math.min(900, Math.round(900 - minDist * 2)));
       span.style.fontVariationSettings = `'wght' ${wght}`;
     }
 
     if (minDist < maxDist) {
       const t = Math.pow(1 - minDist / maxDist, 1.5);
-      const boost = trailActive ? t * 1.35 : t;
-      const coreBlur = (0.04 + boost * 0.14).toFixed(3);
-      const midBlur = (0.18 + boost * 0.38).toFixed(3);
-      const outerBlur = (0.35 + boost * 0.75).toFixed(3);
-      const bright = (1 + boost * 0.65).toFixed(2);
+      const boost = trailActive ? t * 1.3 : t;
 
-      span.style.textShadow = `0 0 ${coreBlur}em #ffffff, 0.03em 0 ${midBlur}em currentColor, 0 0 ${outerBlur}em currentColor`;
-      span.style.filter = `brightness(${bright})`;
+      if (isSubtle) {
+        // Softer, toned-down glow specifically for the Quote section
+        const midBlur = (0.06 + boost * 0.14).toFixed(3);
+        const bright = (1 + boost * 0.28).toFixed(2);
+        span.style.textShadow = `0 0 ${midBlur}em currentColor`;
+        span.style.filter = `brightness(${bright})`;
+      } else {
+        const coreBlur = (0.04 + boost * 0.14).toFixed(3);
+        const midBlur = (0.18 + boost * 0.36).toFixed(3);
+        const outerBlur = (0.34 + boost * 0.7).toFixed(3);
+        const bright = (1 + boost * 0.6).toFixed(2);
+        span.style.textShadow = `0 0 ${coreBlur}em #ffffff, 0.03em 0 ${midBlur}em currentColor, 0 0 ${outerBlur}em currentColor`;
+        span.style.filter = `brightness(${bright})`;
+      }
     } else {
       span.style.textShadow = '';
       span.style.filter = '';
@@ -393,7 +832,7 @@ function updateGlowingTextInteraction() {
 }
 
 /* ==========================================================================
-   3. SCRAMBLE TEXT EFFECT (SortText from ddaniel.dev)
+   4. SCRAMBLE TEXT EFFECT (SortText)
    ========================================================================== */
 const SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890/&$%£€ÈÒLÀ';
 
@@ -415,7 +854,6 @@ function scrambleElement(el) {
       })
       .join('');
 
-    // Render as interactive glow-char spans so trail still brightens them!
     el.innerHTML = currentText
       .split('')
       .map((ch) => `<span class="glow-char${ch === ' ' ? ' whitespace' : ''}">${ch}</span>`)
@@ -425,83 +863,12 @@ function scrambleElement(el) {
       clearInterval(interval);
       el.dataset.scrambling = 'false';
     }
-    progress += 0.25;
-  }, 30);
+    progress += 0.28;
+  }, 28);
 }
 
 /* ==========================================================================
-   4. TERMINAL INTRO ANIMATION
-   ========================================================================== */
-function initTerminalIntro() {
-  const introScreen = document.getElementById('intro-screen');
-  const mainSite = document.getElementById('main-site');
-  const skipBtn = document.getElementById('skip-intro-btn');
-  const historyBlock = document.getElementById('term-history-block');
-  const startBlock = document.getElementById('term-start-block');
-  const cleakErr = document.getElementById('term-cleak-err');
-  const clearRow = document.getElementById('term-clear-row');
-  const log1 = document.getElementById('term-log-1');
-  const log2 = document.getElementById('term-log-2');
-
-  let timers = [];
-
-  function finishIntro() {
-    if (introFinished) return;
-    introFinished = true;
-    timers.forEach(clearTimeout);
-    introScreen.classList.add('hidden-screen');
-    mainSite.classList.add('visible');
-
-    // Check URL hash for initial page
-    const hash = window.location.hash.replace('#', '');
-    const targetIdx = PAGES.indexOf(hash);
-    goToPage(targetIdx >= 0 ? targetIdx : 0, true);
-  }
-
-  skipBtn.addEventListener('click', finishIntro);
-
-  // Typewriter helper for terminal commands
-  function typeInto(el, text, speed = 75) {
-    if (!el) return;
-    el.textContent = '';
-    let i = 0;
-    const iv = setInterval(() => {
-      el.textContent += text[i];
-      i++;
-      if (i >= text.length) clearInterval(iv);
-    }, speed);
-    timers.push(iv);
-  }
-
-  typeInto(document.getElementById('term-cmd-cleak'), 'cleak', 90);
-
-  timers.push(setTimeout(() => {
-    cleakErr.style.display = 'block';
-    clearRow.style.display = 'flex';
-    typeInto(document.getElementById('term-cmd-clear'), 'clear', 80);
-  }, 1200));
-
-  timers.push(setTimeout(() => {
-    historyBlock.style.display = 'none';
-    startBlock.style.display = 'flex';
-    typeInto(document.getElementById('term-cmd-npm'), 'npm run start', 65);
-  }, 3000));
-
-  timers.push(setTimeout(() => {
-    log1.style.display = 'block';
-  }, 5000));
-
-  timers.push(setTimeout(() => {
-    log2.style.display = 'block';
-  }, 6700));
-
-  timers.push(setTimeout(() => {
-    finishIntro();
-  }, 8000));
-}
-
-/* ==========================================================================
-   5. DISCRETE PAGE-TO-PAGE JUMP NAVIGATION SYSTEM
+   5. SMOOTH SCROLL-SNAP NAVIGATION SYSTEM
    ========================================================================== */
 function goToPage(index, force = false) {
   if (index < 0 || index >= PAGES.length) return;
@@ -512,36 +879,33 @@ function goToPage(index, force = false) {
   currentPageIdx = index;
   const pageId = PAGES[index];
 
-  // Toggle active page immediately (page-to-page jump)
+  // Smoothly slide the vertical track to snap to the target page
+  const track = document.getElementById('pages-track');
+  if (track) {
+    track.style.transform = `translate3d(0, -${index * 100}dvh, 0)`;
+  }
+
   document.querySelectorAll('.page').forEach((sec) => {
-    if (sec.id === pageId) {
-      sec.classList.add('active-page');
-    } else {
-      sec.classList.remove('active-page');
-    }
+    sec.classList.toggle('active-page', sec.id === pageId);
   });
 
-  // Update URL hash without causing browser native scroll
   if (history.replaceState) {
     history.replaceState(null, null, `#${pageId}`);
   }
 
-  // Update Right-Side Page Indicator Dots
   document.querySelectorAll('.indicator-dot').forEach((dot) => {
     dot.classList.toggle('active', dot.dataset.page === pageId);
   });
 
-  // Update Top Navbar & Mobile Menu active state
   document.querySelectorAll('[data-nav-page]').forEach((item) => {
     item.classList.toggle('active', item.dataset.navPage === pageId);
   });
 
-  // Trigger page-specific entrance animations
   triggerPageAnimations(pageId);
 
   setTimeout(() => {
     isPageTransitioning = false;
-  }, 420);
+  }, 760);
 }
 
 const pageAnimatedState = {};
@@ -550,12 +914,11 @@ function triggerPageAnimations(pageId) {
   const pageEl = document.getElementById(pageId);
   if (!pageEl) return;
 
-  // Scramble decode section headers & project titles on page arrival
   pageEl.querySelectorAll('.sort-text').forEach((el) => {
     scrambleElement(el);
   });
 
-  // Page 5: Quote ("TALK IS CHEAP. SHOW ME THE CODE") variable-font typing
+  // Page 5: Quote ("i have no idea what im doing / but it works lol" - Neri)
   if (pageId === 'talk' && !pageAnimatedState.talk) {
     pageAnimatedState.talk = true;
     runQuoteTypingAnimation();
@@ -576,8 +939,8 @@ function runQuoteTypingAnimation() {
   const authorEl = document.getElementById('quote-author');
   if (!line1El || !line2El) return;
 
-  const text1 = '“TALK IS CHEAP.';
-  const text2 = 'SHOW ME THE CODE”';
+  const text1 = '“i have no idea what im doing';
+  const text2 = 'but it works lol”';
 
   line1El.innerHTML = '';
   line2El.innerHTML = '';
@@ -593,6 +956,7 @@ function runQuoteTypingAnimation() {
           const isQuote = ch === '“' || ch === '”';
           span.className = `glow-char${ch === ' ' ? ' whitespace' : ''}${isQuote ? ' text-secondary' : ''}`;
           span.dataset.variableWeight = 'true';
+          span.dataset.subtleGlow = 'true';
           span.style.fontVariationSettings = "'wght' 300";
           span.textContent = ch;
           container.appendChild(span);
@@ -601,15 +965,15 @@ function runQuoteTypingAnimation() {
             clearInterval(iv);
             resolve();
           }
-        }, 85);
+        }, 60);
       }, delayMs);
     });
   }
 
   typeVariableLine(line1El, text1, 200)
-    .then(() => typeVariableLine(line2El, text2, 350))
+    .then(() => typeVariableLine(line2El, text2, 250))
     .then(() => {
-      runSimpleTyping(authorEl, '- Linus Torvalds', 300);
+      runSimpleTyping(authorEl, '- Neri', 250);
     });
 }
 
@@ -622,17 +986,16 @@ function runSimpleTyping(el, text, delay = 0) {
       el.textContent += text[i];
       i++;
       if (i >= text.length) clearInterval(iv);
-    }, 35);
+    }, 22);
   }, delay);
 }
 
 function initPageNavigation() {
-  // Mouse wheel jumps cleanly page-by-page
   let wheelCooldown = false;
   window.addEventListener('wheel', (e) => {
     if (!introFinished) return;
     if (wheelCooldown) return;
-    if (Math.abs(e.deltaY) < 12) return;
+    if (Math.abs(e.deltaY) < 15) return;
 
     wheelCooldown = true;
     if (e.deltaY > 0) {
@@ -643,10 +1006,9 @@ function initPageNavigation() {
 
     setTimeout(() => {
       wheelCooldown = false;
-    }, 520);
+    }, 780);
   }, { passive: true });
 
-  // Keyboard navigation (Up/Down/PageUp/PageDown)
   window.addEventListener('keydown', (e) => {
     if (!introFinished) return;
     const tag = (e.target && e.target.tagName) || '';
@@ -667,7 +1029,6 @@ function initPageNavigation() {
     }
   });
 
-  // Touch vertical swipe page jump
   let touchStartY = 0;
   let touchStartX = 0;
   window.addEventListener('touchstart', (e) => {
@@ -680,14 +1041,12 @@ function initPageNavigation() {
     if (!introFinished || !e.changedTouches.length) return;
     const dy = touchStartY - e.changedTouches[0].clientY;
     const dx = touchStartX - e.changedTouches[0].clientX;
-    // Only vertical swipes trigger page change
     if (Math.abs(dy) > 55 && Math.abs(dy) > Math.abs(dx) * 1.3) {
       if (dy > 0) goToPage(currentPageIdx + 1);
       else goToPage(currentPageIdx - 1);
     }
   }, { passive: true });
 
-  // Click links with data-goto
   document.querySelectorAll('[data-goto]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -700,7 +1059,6 @@ function initPageNavigation() {
     });
   });
 
-  // Scramble text on hover
   document.querySelectorAll('.sort-text').forEach((el) => {
     el.addEventListener('mouseover', () => scrambleElement(el));
   });
@@ -737,17 +1095,16 @@ function initTypingAlternate() {
   if (!el) return;
 
   const tokens = [
-    'SOFTWARE ENGINEER',
-    'QA AUTOMATION ENGINEER',
+    'DATA ANALYSIS & SQL',
+    'COMPUTER SCIENCE STUDENT',
     'PYTHON & C# DEVELOPER',
-    'SQL & CLOUD SPECIALIST',
-    'CYPRESS TEST ARCHITECT',
-    'CODE WIZARD'
+    'DATABASE & AI ENTHUSIAST',
+    'SOFTWARE & QA ENGINEER'
   ];
 
-  const typeSpeed = 95;
+  const typeSpeed = 90;
   const deleteSpeed = 28;
-  const pauseTime = 900;
+  const pauseTime = 950;
 
   function sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -761,7 +1118,7 @@ function initTypingAlternate() {
   }
 
   async function loop() {
-    await sleep(1200);
+    await sleep(900);
     let idx = 0;
     while (true) {
       const word = tokens[idx];
@@ -783,7 +1140,7 @@ function initTypingAlternate() {
 }
 
 /* ==========================================================================
-   8. INTERACTIVE WORK TIMELINE
+   8. INTERACTIVE EDUCATION TIMELINE (7 Semesters, Default at 5th Semester)
    ========================================================================== */
 function initTimeline() {
   const nodes = document.querySelectorAll('.timeline-node-wrapper');
@@ -791,13 +1148,19 @@ function initTimeline() {
   const workIntro = document.getElementById('work-intro-text');
   let unfocusTimeout = null;
 
+  // Default progress bar width points to 5th Semester (index 4 out of 7 nodes)
+  // justify-evenly places N items at (i + 1) / (N + 1) -> (4 + 1) / 8 = 62.5%
+  const defaultIdx = 4;
+  const defaultPct = ((defaultIdx + 1) / (nodes.length + 1)) * 100;
+  if (activeLine) {
+    activeLine.style.width = `${defaultPct}%`;
+  }
+
   function focusNode(idx) {
     clearTimeout(unfocusTimeout);
     nodes.forEach((n, i) => n.classList.toggle('focused', i === idx));
     if (workIntro) workIntro.classList.add('hidden-dot');
 
-    // Calculate percentage width to reach the hovered dot
-    // justify-evenly places N items at (i + 1) / (N + 1)
     const pct = ((idx + 1) / (nodes.length + 1)) * 100;
     if (activeLine) {
       activeLine.style.width = `${pct}%`;
@@ -808,8 +1171,8 @@ function initTimeline() {
     unfocusTimeout = setTimeout(() => {
       nodes.forEach((n) => n.classList.remove('focused'));
       if (workIntro) workIntro.classList.remove('hidden-dot');
-      if (activeLine) activeLine.style.width = '0%';
-    }, 350);
+      if (activeLine) activeLine.style.width = `${defaultPct}%`;
+    }, 320);
   }
 
   nodes.forEach((node, idx) => {
@@ -823,7 +1186,7 @@ function initTimeline() {
 }
 
 /* ==========================================================================
-   9. INTERACTIVE PROJECTS CAROUSEL
+   9. INTERACTIVE PROJECTS CAROUSEL (2 Projects)
    ========================================================================== */
 function initCarousel() {
   const track = document.getElementById('carousel-track');
@@ -865,7 +1228,6 @@ function initCarousel() {
   window.addEventListener('resize', updateCarousel);
   updateCarousel();
 
-  // Horizontal drag support on carousel viewport
   const viewport = track.parentElement;
   let dragStartX = 0;
   let isDraggingCarousel = false;
@@ -887,7 +1249,7 @@ function initCarousel() {
 }
 
 /* ==========================================================================
-   10. CONTACT FORM & TOAST NOTIFICATION
+   10. CONTACT FORM & TOAST NOTIFICATION (Sends to jan.kopacz.it@outlook.com)
    ========================================================================== */
 function showToast(message, type = 'success') {
   const container = document.getElementById('toast-container');
@@ -933,8 +1295,7 @@ function initContactForm() {
     const payload = Object.fromEntries(formData.entries());
 
     try {
-      // Send via FormSubmit AJAX endpoint to jan.kopacz@microsoft.wsei.edu.pl
-      const res = await fetch('https://formsubmit.co/ajax/jan.kopacz@microsoft.wsei.edu.pl', {
+      const res = await fetch('https://formsubmit.co/ajax/jan.kopacz.it@outlook.com', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -951,7 +1312,6 @@ function initContactForm() {
         showToast('I will reply soon!', 'success');
         form.reset();
       } else {
-        // Fallback: try local /api/email route or confirm receipt
         showToast('I will reply soon!', 'success');
         form.reset();
       }
@@ -969,13 +1329,12 @@ function initContactForm() {
    INITIALIZE EVERYTHING ON DOM READY
    ========================================================================== */
 document.addEventListener('DOMContentLoaded', () => {
-  // Register glowing text elements for character-level trail brightening
   document.querySelectorAll('.glow-interactive').forEach((el) => {
     registerGlowElement(el);
   });
 
   initTrail();
-  initTerminalIntro();
+  initCubeLoader();
   initPageNavigation();
   initMobileMenu();
   initTypingAlternate();
